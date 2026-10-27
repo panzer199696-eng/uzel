@@ -93,10 +93,19 @@ data class CoreStatus(
     val privacy: PrivacyState?,
 )
 
-/** Ответ ядра: либо значение, либо человеческая причина отказа. */
+/**
+ * Почему ядро не ответило. Текст для человека — в ресурсах приложения на языке
+ * телефона (`:app`, res/values/strings.xml и переводы): чистый Kotlin ресурсов не видит.
+ */
+enum class FailReason { UNAUTHORIZED, NOT_FOUND, HTTP_ERROR, OFFLINE, BAD_RESPONSE }
+
+/** Ответ ядра: либо значение, либо причина отказа. */
 sealed class ApiResult<out T> {
     data class Ok<T>(val value: T) : ApiResult<T>()
-    data class Fail(val message: String, val code: Int? = null) : ApiResult<Nothing>()
+    data class Fail(val reason: FailReason, val code: Int? = null) : ApiResult<Nothing>() {
+        /** Для журналов, не для экрана. */
+        val message: String get() = if (code != null) "$reason ($code)" else reason.toString()
+    }
 }
 
 /**
@@ -159,12 +168,12 @@ class CoreApi(
             conn.disconnect()
             when {
                 code in 200..299 -> ApiResult.Ok(body)
-                code == 401 -> ApiResult.Fail("ядро не пустило: проверьте токен", code)
-                code == 404 -> ApiResult.Fail("не найдено", code)
-                else -> ApiResult.Fail("ядро ответило $code", code)
+                code == 401 -> ApiResult.Fail(FailReason.UNAUTHORIZED, code)
+                code == 404 -> ApiResult.Fail(FailReason.NOT_FOUND, code)
+                else -> ApiResult.Fail(FailReason.HTTP_ERROR, code)
             }
         } catch (e: Exception) {
-            ApiResult.Fail("нет связи с ядром")
+            ApiResult.Fail(FailReason.OFFLINE)
         }
     }
 
@@ -176,7 +185,7 @@ inline fun <T, R> ApiResult<T>.map(transform: (T) -> R): ApiResult<R> = when (th
     is ApiResult.Ok -> try {
         ApiResult.Ok(transform(value))
     } catch (e: Exception) {
-        ApiResult.Fail("непонятный ответ ядра")
+        ApiResult.Fail(FailReason.BAD_RESPONSE)
     }
     is ApiResult.Fail -> this
 }
@@ -238,7 +247,7 @@ fun parseDay(body: String): DayFeed {
         conversations = o.optJSONArray("conversations").objects().map(::parseCard),
         tasks = o.optJSONArray("tasks").objects().map(::parseTask),
         facts = o.optJSONArray("facts").objects().map(::parseFact),
-        speech = o.optJSONObject("totals")?.str("speech") ?: "0 с",
+        speech = o.optJSONObject("totals")?.str("speech") ?: "",
         error = o.str("error"),
     )
 }
@@ -282,8 +291,10 @@ fun parseSearch(body: String): SearchResult {
 
 fun parsePrivacy(body: String): PrivacyState = parsePrivacyObject(JSONObject(body))
 
+// Ключи ответа машинные и от языка ядра не зависят, а значения — по языку
+// интерфейса ядра («выключена» / «off»). Поэтому пишется ли запись — по коду.
 private fun parsePrivacyObject(o: JSONObject) = PrivacyState(
-    recording = o.str("запись") != "выключена",
+    recording = o.str("код")?.let { it == "allowed" } ?: (o.str("запись") != "выключена"),
     reason = o.str("причина"),
     code = o.str("код"),
     until = o.str("до"),

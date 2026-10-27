@@ -1,9 +1,15 @@
 """Стоп-лист субтитровых галлюцинаций (FR-023).
 
 Whisper на тишине охотно «диктует» подписи из обучающего корпуса субтитров:
-«Продолжение следует», «Субтитры сделал …». Это не речь человека — такие
-реплики вырезаются целиком. Но осторожно: настоящую речь порезать нельзя,
-поэтому фраза вырезается только когда реплика почти целиком состоит из неё.
+«Продолжение следует», «Субтитры сделал …», «Thank you for watching». Это не
+речь человека — такие реплики вырезаются целиком. Но осторожно: настоящую речь
+порезать нельзя, поэтому фраза вырезается только когда реплика почти целиком
+состоит из неё.
+
+Стоп-фразы живут в каталогах языков (``locales/<код>.json``, ключи
+``stt.hallucination.*``) и проверяются ВСЕ сразу, независимо от языка
+интерфейса и распознавания: whisper галлюцинирует и на чужом языке, а
+русская фраза в английской речи не совпадёт случайно.
 
 Фильтр вызывается роутером после любого бэкенда и бэкенд-независим.
 """
@@ -11,25 +17,30 @@ Whisper на тишине охотно «диктует» подписи из о
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
+from .. import i18n
+
+
+@lru_cache(maxsize=1)
+def stop_lists() -> dict[str, tuple[tuple[str, ...], tuple[str, ...]]]:
+    """Язык → (фразы целиком, начала фраз с именем автора субтитров)."""
+    lists = {}
+    for lang in i18n.available_languages():
+        phrases = i18n.catalog(lang).get("stt.hallucination.phrases") or []
+        prefixes = i18n.catalog(lang).get("stt.hallucination.prefixes") or []
+        lists[lang] = (tuple(phrases), tuple(prefixes))
+    return lists
+
+
+# Русские списки — под старыми именами: на них ссылаются тесты и замеры.
 # Фразы целиком: нормализованная реплика почти целиком состоит из такой фразы.
-STOP_PHRASES: tuple[str, ...] = (
-    "продолжение следует",
-    "подписывайтесь на канал",
-    "спасибо за просмотр",
-    "ставьте лайки",
-)
-
+STOP_PHRASES: tuple[str, ...] = stop_lists().get("ru", ((), ()))[0]
 # Начала фраз, после которых идёт имя автора субтитров, а не речь.
-STOP_PREFIXES: tuple[str, ...] = (
-    "субтитры сделал",
-    "субтитры делал",
-    "редактор субтитров",
-    "субтитры создавал",
-)
+STOP_PREFIXES: tuple[str, ...] = stop_lists().get("ru", ((), ()))[1]
 
-# «спасибо за внимание» и «всем пока» сюда включать НЕЛЬЗЯ: это нормальный
-# конец совещания — ровно то место, где звучат договорённости и сроки.
+# «спасибо за внимание», «всем пока», «thank you» сюда включать НЕЛЬЗЯ: это
+# нормальный конец совещания — ровно то место, где звучат договорённости и сроки.
 
 _PHRASE_SHARE = 0.8  # фраза должна занимать не меньше 80 % реплики
 _TAIL_LIMIT = 40  # хвост после префикса — имя автора субтитров, не речь
@@ -61,15 +72,17 @@ def strip_hallucination(text: str) -> tuple[str, str | None]:
 
     normalised = normalise(text)
 
-    for phrase in STOP_PHRASES:
-        if phrase in normalised and len(phrase) >= _PHRASE_SHARE * len(normalised):
-            return "", phrase
+    for phrases, _ in stop_lists().values():
+        for phrase in phrases:
+            if phrase in normalised and len(phrase) >= _PHRASE_SHARE * len(normalised):
+                return "", phrase
 
-    for prefix in STOP_PREFIXES:
-        if not normalised.startswith(prefix):
-            continue
-        tail = normalised[len(prefix) :].strip()
-        if len(tail) <= _TAIL_LIMIT:
-            return "", prefix
+    for _, prefixes in stop_lists().values():
+        for prefix in prefixes:
+            if not normalised.startswith(prefix):
+                continue
+            tail = normalised[len(prefix) :].strip()
+            if len(tail) <= _TAIL_LIMIT:
+                return "", prefix
 
     return text, None

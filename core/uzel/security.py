@@ -44,13 +44,9 @@ def ensure_safe_listen_host(host: str | None, token: str | None) -> None:
     """
     if is_loopback_host(host) or (token or "").strip():
         return
-    raise UnsafeHostError(
-        f"UZEL_HOST={host!r} слушает все интерфейсы, а UZEL_API_TOKEN не задан: "
-        "вся память (реплики, поиск, приватность) будет открыта локальной сети. "
-        "Задай в .env строку UZEL_API_TOKEN=<секрет> и передавай его мосту и "
-        "телефону (параметр ?token=… или заголовок Authorization: Bearer …), "
-        "либо оставь UZEL_HOST=127.0.0.1."
-    )
+    from .i18n import t
+
+    raise UnsafeHostError(t("security.unsafe_host", host=repr(host)))
 
 
 def extract_token(headers: Headers, query_string: bytes) -> str | None:

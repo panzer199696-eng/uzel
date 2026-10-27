@@ -13,6 +13,8 @@ import logging
 from datetime import date, datetime
 from pathlib import Path
 
+from .. import i18n
+from ..i18n import t
 from .obsidian import ConversationView
 
 log = logging.getLogger(__name__)
@@ -22,12 +24,12 @@ def _hhmm(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp).strftime("%H:%M")
 
 
-def _task_line(task: dict) -> str:
+def _task_line(task: dict, lang: str) -> str:
     parts = [str(task.get("text") or "").strip()]
     if task.get("assignee"):
         parts.append(f"({task['assignee']})")
     if task.get("due"):
-        parts.append(f"— до {task['due']}")
+        parts.append(t("export.task.due", lang=lang, due=task["due"]))
     return " ".join(part for part in parts if part)
 
 
@@ -35,21 +37,25 @@ def is_useful(view: ConversationView) -> bool:
     return bool((view.summary or "").strip() or view.facts or view.tasks)
 
 
-def render_report(day: date, conversations: list[ConversationView]) -> str | None:
+def render_report(
+    day: date, conversations: list[ConversationView], *, lang: str | None = None
+) -> str | None:
     """Текст отчёта или ``None``, если за день нет ничего полезного."""
+    lang = lang or i18n.get_language()
     useful = [view for view in conversations if is_useful(view)]
     if not useful:
         return None
 
-    lines = [f"УЗЕЛ — отчёт за {day.strftime('%d.%m.%Y')}", ""]
+    date_text = day.strftime(t("format.date", lang=lang))
+    lines = [t("export.report.title", lang=lang, date=date_text), ""]
 
     all_tasks = [task for view in useful for task in view.tasks]
     if all_tasks:
-        lines += ["ЗАДАЧИ", ""]
-        lines += [f"  [ ] {_task_line(task)}" for task in all_tasks]
+        lines += [t("export.report.tasks", lang=lang), ""]
+        lines += [f"  [ ] {_task_line(task, lang)}" for task in all_tasks]
         lines.append("")
 
-    lines += ["РАЗГОВОРЫ", ""]
+    lines += [t("export.report.conversations", lang=lang), ""]
     for view in useful:
         header = f"{_hhmm(view.started_at)}–{_hhmm(view.ended_at)}"
         if view.people:

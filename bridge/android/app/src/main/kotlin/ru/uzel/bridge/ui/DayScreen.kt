@@ -37,10 +37,13 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ru.uzel.bridge.AppViewModel
+import ru.uzel.bridge.R
 import ru.uzel.bridge.core.ConversationCard
 import ru.uzel.bridge.core.FactItem
 import ru.uzel.bridge.core.TaskItem
@@ -77,23 +80,23 @@ fun DayScreen(vm: AppViewModel) {
                 item {
                     EmptyState(
                         Icons.Rounded.Forum,
-                        "В этот день ничего не записано",
-                        "Разговоры появятся здесь, когда ядро их расшифрует",
+                        stringResource(R.string.day_empty_title),
+                        stringResource(R.string.day_empty_text),
                     )
                 }
             }
             if (feed.tasks.isNotEmpty()) {
-                item { SectionHeader("Задачи", trailing = feed.tasks.size.toString()) }
+                item { SectionHeader(stringResource(R.string.section_tasks), trailing = feed.tasks.size.toString()) }
                 items(feed.tasks, key = { "t" + it.id }) { TaskRow(it) { id -> vm.openConversation(id) } }
             }
             if (feed.conversations.isNotEmpty()) {
-                item { SectionHeader("Разговоры", trailing = feed.conversations.size.toString()) }
+                item { SectionHeader(stringResource(R.string.section_conversations), trailing = feed.conversations.size.toString()) }
                 items(feed.conversations, key = { "c" + it.id }) { card ->
                     ConversationRow(card) { vm.openConversation(card.id) }
                 }
             }
             if (feed.facts.isNotEmpty()) {
-                item { SectionHeader("Факты", trailing = feed.facts.size.toString()) }
+                item { SectionHeader(stringResource(R.string.section_facts), trailing = feed.facts.size.toString()) }
                 items(feed.facts, key = { "f" + it.id }) { FactRow(it) }
             }
         }
@@ -107,17 +110,19 @@ private fun DateBar(vm: AppViewModel) {
         Modifier.fillMaxWidth().padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FilledTonalIconButton(onClick = { vm.shiftDay(-1) }) { Icon(Icons.Rounded.ChevronLeft, "Предыдущий день") }
+        FilledTonalIconButton(onClick = { vm.shiftDay(-1) }) {
+            Icon(Icons.Rounded.ChevronLeft, stringResource(R.string.prev_day))
+        }
         Text(
-            dayTitle(vm.date),
+            dayTitle(LocalContext.current.resources, vm.date),
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        if (!today) TextButton(onClick = vm::goToday) { Text("Сегодня") }
+        if (!today) TextButton(onClick = vm::goToday) { Text(stringResource(R.string.today)) }
         FilledTonalIconButton(onClick = { vm.shiftDay(1) }, enabled = !today) {
-            Icon(Icons.Rounded.ChevronRight, "Следующий день")
+            Icon(Icons.Rounded.ChevronRight, stringResource(R.string.next_day))
         }
     }
 }
@@ -125,10 +130,10 @@ private fun DateBar(vm: AppViewModel) {
 @Composable
 private fun Totals(conversations: Int, speech: String, tasks: Int, facts: Int) {
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        TotalPill("$conversations", "разговоров", Modifier.weight(1f))
-        TotalPill(speech, "речи", Modifier.weight(1f))
-        TotalPill("$tasks", "задач", Modifier.weight(1f))
-        TotalPill("$facts", "фактов", Modifier.weight(1f))
+        TotalPill("$conversations", stringResource(R.string.total_conversations), Modifier.weight(1f))
+        TotalPill(speech, stringResource(R.string.total_speech), Modifier.weight(1f))
+        TotalPill("$tasks", stringResource(R.string.total_tasks), Modifier.weight(1f))
+        TotalPill("$facts", stringResource(R.string.total_facts), Modifier.weight(1f))
     }
 }
 
@@ -146,6 +151,7 @@ private fun TotalPill(value: String, label: String, modifier: Modifier) {
 @Composable
 fun ConversationRow(card: ConversationCard, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
+    val res = LocalContext.current.resources
     val analysed = card.status == "closed" && card.summary != null
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         // Колонка времени — как в ленте календаря.
@@ -162,20 +168,20 @@ fun ConversationRow(card: ConversationCard, onClick: () -> Unit) {
             Column(Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        card.duration + " · " + statusLabel(card.status),
+                        card.duration + " · " + statusLabel(res, card.status),
                         style = MaterialTheme.typography.labelMedium,
                         color = if (analysed) scheme.primary else scheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
-                    if (card.tasks > 0) CountBadge("${card.tasks} зад.")
+                    if (card.tasks > 0) CountBadge(stringResource(R.string.badge_tasks, card.tasks))
                     if (card.facts > 0) {
                         Spacer(Modifier.size(6.dp))
-                        CountBadge("${card.facts} факт.")
+                        CountBadge(stringResource(R.string.badge_facts, card.facts))
                     }
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    card.summary ?: "${card.utterances} реплик, сводки нет",
+                    card.summary ?: stringResource(R.string.no_summary, card.utterances),
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (card.summary != null) scheme.onSurface else scheme.onSurfaceVariant,
                     maxLines = 4,
@@ -230,7 +236,9 @@ fun TaskRow(task: TaskItem, onOpen: (Long) -> Unit) {
             Spacer(Modifier.size(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(task.text, style = MaterialTheme.typography.bodyLarge)
-                val meta = listOfNotNull(task.assignee?.let { "кто: $it" }, task.due?.let { "срок: $it" })
+                val who = task.assignee?.let { stringResource(R.string.task_who, it) }
+                val due = task.due?.let { stringResource(R.string.task_due, it) }
+                val meta = listOfNotNull(who, due)
                 if (meta.isNotEmpty()) {
                     Text(meta.joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
                 }

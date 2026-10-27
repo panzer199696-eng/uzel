@@ -1,6 +1,7 @@
 package ru.uzel.bridge.ui
 
 import android.content.Intent
+import android.content.res.Resources
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -62,20 +63,21 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import ru.uzel.bridge.AppViewModel
 import ru.uzel.bridge.Keepalive
-import java.util.Locale
+import ru.uzel.bridge.R
 
 /** Во что сейчас складывается состояние моста — для героя экрана. */
-private enum class Mood(val title: String, val icon: ImageVector) {
-    OFF("Мост выключен", Icons.Rounded.PowerSettingsNew),
-    STARTING("Поднимаю мост…", Icons.Rounded.Timer),
-    SEARCHING("Ищу кулон", Icons.Rounded.BluetoothSearching),
-    LISTENING("Слушаю", Icons.Rounded.GraphicEq),
-    QUIET("Кулон на связи", Icons.Rounded.SignalCellularAlt),
+private enum class Mood(val title: Int, val icon: ImageVector) {
+    OFF(R.string.mood_off, Icons.Rounded.PowerSettingsNew),
+    STARTING(R.string.mood_starting, Icons.Rounded.Timer),
+    SEARCHING(R.string.mood_searching, Icons.Rounded.BluetoothSearching),
+    LISTENING(R.string.mood_listening, Icons.Rounded.GraphicEq),
+    QUIET(R.string.mood_quiet, Icons.Rounded.SignalCellularAlt),
 }
 
 private fun moodOf(vm: AppViewModel, now: Long): Mood {
@@ -139,6 +141,7 @@ private fun Hero(vm: AppViewModel, mood: Mood, onStart: () -> Unit) {
         label = "orb",
     )
     val onOrb = if (mood == Mood.OFF) scheme.surface else scheme.onPrimary
+    val res = LocalContext.current.resources
 
     Surface(shape = RoundedCornerShape(36.dp), color = container, modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -147,10 +150,10 @@ private fun Hero(vm: AppViewModel, mood: Mood, onStart: () -> Unit) {
         ) {
             Orb(mood, orbColor, onOrb)
             Spacer(Modifier.height(20.dp))
-            Text(mood.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(mood.title), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
             Text(
-                heroSubtitle(vm, mood),
+                heroSubtitle(res, vm, mood),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -166,7 +169,7 @@ private fun Hero(vm: AppViewModel, mood: Mood, onStart: () -> Unit) {
                         Icon(Icons.Rounded.Lock, null, Modifier.size(16.dp), tint = scheme.onTertiaryContainer)
                         Spacer(Modifier.size(6.dp))
                         Text(
-                            privacyText(p.until),
+                            privacyText(res, p.until),
                             style = MaterialTheme.typography.labelLarge,
                             color = scheme.onTertiaryContainer,
                         )
@@ -183,7 +186,7 @@ private fun Hero(vm: AppViewModel, mood: Mood, onStart: () -> Unit) {
                     ) {
                         Icon(Icons.Rounded.PowerSettingsNew, null)
                         Spacer(Modifier.size(8.dp))
-                        Text("Выключить")
+                        Text(stringResource(R.string.action_turn_off))
                     }
                     Button(
                         onClick = { vm.addMoment() },
@@ -192,7 +195,7 @@ private fun Hero(vm: AppViewModel, mood: Mood, onStart: () -> Unit) {
                     ) {
                         Icon(Icons.Rounded.BookmarkAdd, null)
                         Spacer(Modifier.size(8.dp))
-                        Text("Метка")
+                        Text(stringResource(R.string.action_mark))
                     }
                 } else {
                     Button(
@@ -202,7 +205,7 @@ private fun Hero(vm: AppViewModel, mood: Mood, onStart: () -> Unit) {
                     ) {
                         Icon(Icons.Rounded.PowerSettingsNew, null)
                         Spacer(Modifier.size(10.dp))
-                        Text("Включить мост", style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.action_turn_on_bridge), style = MaterialTheme.typography.titleMedium)
                     }
                 }
             }
@@ -259,24 +262,24 @@ private fun Orb(mood: Mood, color: Color, onColor: Color) {
     }
 }
 
-private fun heroSubtitle(vm: AppViewModel, mood: Mood): String {
+private fun heroSubtitle(res: Resources, vm: AppViewModel, mood: Mood): String {
     val s = vm.snapshot
     return when (mood) {
-        Mood.OFF -> "Включите, и телефон будет принимать звук с кулона и отправлять его в ядро"
-        Mood.STARTING -> "Служба запускается"
-        Mood.SEARCHING -> "Кулон включён и рядом? Его не должно держать другое приложение"
+        Mood.OFF -> res.getString(R.string.hero_off)
+        Mood.STARTING -> res.getString(R.string.hero_starting)
+        Mood.SEARCHING -> res.getString(R.string.hero_searching)
         Mood.LISTENING, Mood.QUIET -> buildString {
-            append(if (mood == Mood.LISTENING) "Идёт звук" else "Тишина")
-            if (s.startedAt > 0) append(" · мост работает с ").append(hm(s.startedAt))
-            if (s.lastSentAt > 0) append(" · в ядро ").append(agoText(s.lastSentAt))
+            append(res.getString(if (mood == Mood.LISTENING) R.string.hero_sound else R.string.hero_silence))
+            if (s.startedAt > 0) append(res.getString(R.string.hero_since, hm(s.startedAt)))
+            if (s.lastSentAt > 0) append(res.getString(R.string.hero_sent, agoText(res, s.lastSentAt)))
         }
     }
 }
 
-private fun privacyText(until: String?): String {
-    if (until == null) return "Приват: ядро не пишет"
+private fun privacyText(res: Resources, until: String?): String {
+    if (until == null) return res.getString(R.string.privacy_on)
     val time = until.substringAfter('T').take(5)
-    return "Приват до $time"
+    return res.getString(R.string.privacy_until, time)
 }
 
 @Composable
@@ -285,7 +288,8 @@ private fun Stats(vm: AppViewModel, now: Long) {
     val fresh = s.isFresh(now)
     val battery = s.batteryPercent.takeIf { fresh && s.connected }
     val scheme = MaterialTheme.colorScheme
-    SectionHeader("Кулон и канал")
+    val locale = LocalContext.current.resources.locale()
+    SectionHeader(stringResource(R.string.section_pendant))
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         StatTile(
             icon = when {
@@ -295,16 +299,16 @@ private fun Stats(vm: AppViewModel, now: Long) {
                 else -> Icons.Rounded.Battery5Bar
             },
             value = battery?.let { "$it %" } ?: "—",
-            label = "заряд кулона",
+            label = stringResource(R.string.stat_battery),
             accent = if (battery != null && battery <= 15) scheme.error else scheme.primary,
             modifier = Modifier.weight(1f),
         )
         StatTile(
             icon = Icons.Rounded.SignalCellularAlt,
             value = if (fresh && s.packets + s.lost > 0) {
-                String.format(Locale.forLanguageTag("ru"), "%.1f %%", s.lossRatio * 100)
+                String.format(locale, "%.1f %%", s.lossRatio * 100)
             } else "—",
-            label = "потери пакетов",
+            label = stringResource(R.string.stat_loss),
             accent = if (s.lossRatio > 0.05) scheme.error else scheme.primary,
             modifier = Modifier.weight(1f),
         )
@@ -314,13 +318,13 @@ private fun Stats(vm: AppViewModel, now: Long) {
         StatTile(
             icon = Icons.Rounded.CloudUpload,
             value = if (fresh) s.sent.toString() else "—",
-            label = "кусков в ядре",
+            label = stringResource(R.string.stat_sent),
             modifier = Modifier.weight(1f),
         )
         StatTile(
             icon = Icons.Rounded.Inventory2,
             value = if (fresh) s.spooled.toString() else "—",
-            label = "ждут отправки",
+            label = stringResource(R.string.stat_spooled),
             accent = if (s.spooled > 20) scheme.tertiary else scheme.primary,
             modifier = Modifier.weight(1f),
         )
@@ -333,7 +337,8 @@ private fun CoreCard(vm: AppViewModel) {
     val scheme = MaterialTheme.colorScheme
     val online = vm.coreOnline
     val st = vm.coreStatus
-    SectionHeader("Ядро на ПК")
+    val res = LocalContext.current.resources
+    SectionHeader(stringResource(R.string.section_core))
     Surface(shape = RoundedCornerShape(28.dp), color = scheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -349,9 +354,10 @@ private fun CoreCard(vm: AppViewModel) {
                 Spacer(Modifier.size(10.dp))
                 Text(
                     when (online) {
-                        true -> "На связи" + (st?.version?.let { " · версия $it" } ?: "")
-                        false -> "Недоступно — звук копится на телефоне"
-                        null -> "Проверяю связь…"
+                        true -> stringResource(R.string.core_online) +
+                            (st?.version?.let { stringResource(R.string.core_version, it) } ?: "")
+                        false -> stringResource(R.string.core_offline)
+                        null -> stringResource(R.string.core_checking)
                     },
                     style = MaterialTheme.typography.titleMedium,
                 )
@@ -359,9 +365,13 @@ private fun CoreCard(vm: AppViewModel) {
             if (online == true && st != null) {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "В памяти " + plural(st.conversations, "разговор", "разговора", "разговоров") + ", " +
-                        plural(st.tasks, "задача", "задачи", "задач") + ", " +
-                        plural(st.facts, "факт", "факта", "фактов") + " · в очереди расшифровки ${st.pending}",
+                    stringResource(
+                        R.string.core_memory,
+                        res.count(R.plurals.conversations, st.conversations),
+                        res.count(R.plurals.tasks, st.tasks),
+                        res.count(R.plurals.facts, st.facts),
+                        st.pending,
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = scheme.onSurfaceVariant,
                 )
@@ -371,23 +381,23 @@ private fun CoreCard(vm: AppViewModel) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.Shield, null, tint = scheme.primary, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(8.dp))
-                    Text("Приватность", style = MaterialTheme.typography.labelLarge)
+                    Text(stringResource(R.string.privacy_title), style = MaterialTheme.typography.labelLarge)
                 }
                 Spacer(Modifier.height(8.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     val busy = vm.privacyBusy
-                    FilledTonalButton(onClick = { vm.mute(10) }, enabled = !busy, shapes = ButtonDefaults.shapes()) { Text("Тишина 10 мин") }
-                    FilledTonalButton(onClick = { vm.mute(60) }, enabled = !busy, shapes = ButtonDefaults.shapes()) { Text("1 час") }
+                    FilledTonalButton(onClick = { vm.mute(10) }, enabled = !busy, shapes = ButtonDefaults.shapes()) { Text(stringResource(R.string.privacy_mute10)) }
+                    FilledTonalButton(onClick = { vm.mute(60) }, enabled = !busy, shapes = ButtonDefaults.shapes()) { Text(stringResource(R.string.privacy_mute60)) }
                     FilledTonalButton(onClick = vm::pausePrivacy, enabled = !busy, shapes = ButtonDefaults.shapes()) {
                         Icon(Icons.Rounded.Lock, null, Modifier.size(18.dp))
                         Spacer(Modifier.size(6.dp))
-                        Text("Приват")
+                        Text(stringResource(R.string.privacy_private))
                     }
                     if (vm.privacy?.recording == false) {
                         Button(onClick = vm::unmute, enabled = !busy, shapes = ButtonDefaults.shapes()) {
                             Icon(Icons.Rounded.LockOpen, null, Modifier.size(18.dp))
                             Spacer(Modifier.size(6.dp))
-                            Text("Снять")
+                            Text(stringResource(R.string.privacy_lift))
                         }
                     }
                 }
@@ -404,16 +414,16 @@ private fun KeepaliveHint(vm: AppViewModel, openIntent: (Intent) -> Unit) {
     Spacer(Modifier.height(16.dp))
     Surface(shape = RoundedCornerShape(28.dp), color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp)) {
-            Text("Android может усыпить мост", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
+            Text(stringResource(R.string.keepalive_title), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
             Spacer(Modifier.height(4.dp))
             Text(
-                "Разрешите работу без ограничений батареи — тогда сторож сможет поднять мост, если система его закроет.",
+                stringResource(R.string.keepalive_text),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
             Spacer(Modifier.height(12.dp))
             Button(onClick = { openIntent(Keepalive.batteryIntent(ctx)) }, shapes = ButtonDefaults.shapes()) {
-                Text("Разрешить")
+                Text(stringResource(R.string.action_allow))
             }
         }
     }

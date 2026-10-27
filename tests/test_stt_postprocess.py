@@ -71,3 +71,35 @@ def test_stop_lists_contents():
         "редактор субтитров",
         "субтитры создавал",
     }
+
+
+# --- английские галлюцинации (локализация, 27.10.2026) ---
+
+
+def test_english_subtitle_phrases_are_cut_whatever_the_interface_language():
+    """Стоп-листы всех языков работают всегда: язык интерфейса тут ни при чём."""
+    assert strip_hallucination("Thank you for watching!") == ("", "thank you for watching")
+    assert strip_hallucination("Please subscribe.") == ("", "please subscribe")
+    assert strip_hallucination("Like and subscribe!") == ("", "like and subscribe")
+
+
+def test_english_subtitle_credits_are_cut_by_prefix():
+    text = "Subtitles by the Amara.org community"
+    assert strip_hallucination(text) == ("", "subtitles by")
+
+
+def test_english_working_speech_with_phrase_inside_is_untouched():
+    text = (
+        "We closed the purchase order for the concrete and, thanks for watching "
+        "the site yesterday, the delivery is booked for Friday morning"
+    )
+    assert strip_hallucination(text) == (text, None)
+
+
+def test_stop_lists_by_language_cover_ru_and_en():
+    from uzel.stt.postprocess import stop_lists
+
+    lists = stop_lists()
+    assert set(lists["ru"][0]) == set(STOP_PHRASES)
+    assert "thank you for watching" in lists["en"][0]
+    assert "subtitles by" in lists["en"][1]

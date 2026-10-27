@@ -10,6 +10,9 @@ import logging
 from dataclasses import dataclass
 from datetime import date
 
+from .. import i18n
+from ..i18n import t
+
 log = logging.getLogger(__name__)
 
 API_BASE = "https://api.telegram.org"
@@ -25,33 +28,44 @@ class DaySummary:
     tasks: list[str]
 
 
-def render_summary(summary: DaySummary, *, max_items: int = 8) -> str:
+def render_summary(
+    summary: DaySummary, *, max_items: int = 8, lang: str | None = None
+) -> str:
     """Короткая сводка. Длинный текст режется, а не отправляется обрезком."""
-    lines = [f"<b>УЗЕЛ — сводка за {summary.day.strftime('%d.%m.%Y')}</b>", ""]
+    lang = lang or i18n.get_language()
+    date_text = summary.day.strftime(t("format.date", lang=lang))
+    lines = [t("export.telegram.title", lang=lang, date=date_text), ""]
 
     if not summary.conversations:
-        lines.append("За сутки записей нет.")
+        lines.append(t("export.telegram.empty", lang=lang))
         return "\n".join(lines)
 
     lines.append(
-        f"Разговоров: {summary.conversations}, речи: {summary.speech_seconds / 60:.0f} мин"
+        t(
+            "export.telegram.totals",
+            lang=lang,
+            conversations=summary.conversations,
+            minutes=f"{summary.speech_seconds / 60:.0f}",
+        )
     )
     lines.append("")
 
     if summary.summaries:
-        lines.append("<b>О чём говорили</b>")
+        lines.append(t("export.telegram.summaries", lang=lang))
         for item in summary.summaries[:max_items]:
             lines.append(f"• {_escape(item)}")
         if len(summary.summaries) > max_items:
-            lines.append(f"…и ещё {len(summary.summaries) - max_items}")
+            more = len(summary.summaries) - max_items
+            lines.append(t("export.telegram.more", lang=lang, count=more))
         lines.append("")
 
     if summary.tasks:
-        lines.append("<b>Задачи</b>")
+        lines.append(t("export.telegram.tasks", lang=lang))
         for item in summary.tasks[:max_items]:
             lines.append(f"☐ {_escape(item)}")
         if len(summary.tasks) > max_items:
-            lines.append(f"…и ещё {len(summary.tasks) - max_items}")
+            more = len(summary.tasks) - max_items
+            lines.append(t("export.telegram.more", lang=lang, count=more))
 
     text = "\n".join(lines)
     if len(text) > MAX_MESSAGE_CHARS:

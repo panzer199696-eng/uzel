@@ -19,10 +19,23 @@ from datetime import datetime
 from datetime import time as dtime
 from pathlib import Path
 
+from . import i18n
+from .i18n import t
+
 log = logging.getLogger(__name__)
 
-# Понедельник = 0, как в datetime.weekday()
+# Понедельник = 0, как в datetime.weekday(). Русские сокращения — под старым
+# именем; в расписании понимаются сокращения ЛЮБОГО языка каталогов
+# (пн / mon), а показываются — на языке интерфейса.
 WEEKDAY_NAMES = ("пн", "вт", "ср", "чт", "пт", "сб", "вс")
+
+
+def _weekday_tokens() -> dict[str, int]:
+    tokens = {name: index for index, name in enumerate(WEEKDAY_NAMES)}
+    for names in i18n.data_all("privacy.weekdays"):
+        for index, name in enumerate(names):
+            tokens[str(name).lower()] = index
+    return tokens
 
 
 @dataclass(frozen=True)
@@ -43,12 +56,19 @@ class QuietWindow:
         return current >= self.start or current < self.end
 
     def describe(self) -> str:
+        """Окно для человека на языке интерфейса: «10:00–12:00 пнвт»."""
+        names = i18n.data("privacy.weekdays", default=list(WEEKDAY_NAMES))
         days = (
-            "".join(WEEKDAY_NAMES[d] for d in sorted(self.weekdays))
+            t("privacy.weekday_sep").join(names[d] for d in sorted(self.weekdays))
             if len(self.weekdays) < 7
-            else "ежедневно"
+            else t("privacy.daily")
         )
-        return f"{self.start:%H:%M}–{self.end:%H:%M} {days}"
+        return t(
+            "privacy.window",
+            start=f"{self.start:%H:%M}",
+            end=f"{self.end:%H:%M}",
+            days=days,
+        )
 
 
 def parse_window(spec: str) -> QuietWindow:
@@ -76,12 +96,13 @@ def parse_window(spec: str) -> QuietWindow:
 
     if days_part:
         weekdays = set()
+        known = _weekday_tokens()
         for token in days_part.replace(" ", "").split(","):
             if not token:
                 continue
-            if token not in WEEKDAY_NAMES:
+            if token.lower() not in known:
                 raise ValueError(f"неизвестный день недели «{token}»")
-            weekdays.add(WEEKDAY_NAMES.index(token))
+            weekdays.add(known[token.lower()])
         if not weekdays:
             raise ValueError("список дней недели пуст")
     else:
@@ -101,7 +122,8 @@ class PrivacyState:
 
     def as_dict(self) -> dict:
         return {
-            "запись": "выключена" if self.muted else "идёт",
+            # Ключи — машинные (их читают окно, трей и телефон), значения — для человека.
+            "запись": t("privacy.recording.off") if self.muted else t("privacy.recording.on"),
             "причина": self.reason,
             "код": self.code,
             "до": (
@@ -231,23 +253,26 @@ class PrivacyGate:
         if self.broken_windows:
             return PrivacyState(
                 True,
-                "расписание стоп-зон с ошибкой: " + "; ".join(self.broken_windows),
+                t("privacy.reason.bad_schedule", windows="; ".join(self.broken_windows)),
                 code="bad_schedule",
             )
 
         if self._corrupt:
             return PrivacyState(
                 True,
-                f"файл состояния {self.state_path.name} не читается",
+                t("privacy.reason.bad_state", name=self.state_path.name),
                 code="bad_state",
             )
 
         if self._paused:
-            return PrivacyState(True, "остановлено вручную", code="paused")
+            return PrivacyState(True, t("privacy.reason.paused"), code="paused")
 
         if self._muted_until and now < self._muted_until:
             return PrivacyState(
-                True, "ручная заглушка", muted_until=self._muted_until, code="manual"
+                True,
+                t("privacy.reason.manual"),
+                muted_until=self._muted_until,
+                code="manual",
             )
 
         moment = datetime.fromtimestamp(now)
@@ -255,11 +280,11 @@ class PrivacyGate:
             if window.contains(moment):
                 return PrivacyState(
                     True,
-                    f"стоп-зона по расписанию {window.describe()}",
+                    t("privacy.reason.schedule", window=window.describe()),
                     code="schedule",
                 )
 
-        return PrivacyState(False, "разрешено", code="allowed")
+        return PrivacyState(False, t("privacy.reason.allowed"), code="allowed")
 
     def is_muted(self, now: float | None = None) -> bool:
         return self.state(now).muted
@@ -278,16 +303,10 @@ def cloud_policy_line(cloud_backends: list[str] | tuple[str, ...] = ()) -> str:
     захардкожено в CLI и MCP и показывалось бы даже при включённом облаке.
     """
     if BATCH_ALLOW_CLOUD:
-        return "облако на штатном пути: РАЗРЕШЕНО (allow_cloud=True в конвейере)"
+        return t("privacy.cloud.allowed")
     if cloud_backends:
-        return (
-            "облако на штатном пути: запрещено (allow_cloud=False); облачные в "
-            f"настройках: {', '.join(cloud_backends)} — только явной командой"
-        )
-    return (
-        "облако на штатном пути: запрещено "
-        "(allow_cloud=False, облачных бэкендов в настройках нет)"
-    )
+        return t("privacy.cloud.forbidden_with", backends=", ".join(cloud_backends))
+    return t("privacy.cloud.forbidden")
 
 
 def build_gate(settings) -> PrivacyGate:

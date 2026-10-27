@@ -1,5 +1,6 @@
 package ru.uzel.bridge.ui
 
+import android.content.res.Resources
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,69 +20,68 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import ru.uzel.bridge.R
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private val RU = Locale.forLanguageTag("ru")
-private val DAY_FMT = DateTimeFormatter.ofPattern("d MMMM", RU)
-private val WEEKDAY_FMT = DateTimeFormatter.ofPattern("EEEE, d MMMM", RU)
-private val HM = DateTimeFormatter.ofPattern("HH:mm", RU)
+// Строки и шаблоны дат — из ресурсов (values/ — английский, values-ru/ — русский),
+// язык — системный или выбранный для приложения (Android 13+).
+private val HM = DateTimeFormatter.ofPattern("HH:mm")
 
-fun dayTitle(d: LocalDate): String {
+/** Язык ресурсов приложения: при выборе языка для УЗЛА он может не совпадать с системным. */
+fun Resources.locale(): Locale = configuration.locales[0] ?: Locale.getDefault()
+
+private fun Resources.dateFormat(id: Int) = DateTimeFormatter.ofPattern(getString(id), locale())
+
+fun dayTitle(res: Resources, d: LocalDate): String {
     val today = LocalDate.now()
+    val day = d.format(res.dateFormat(R.string.fmt_day))
     return when (d) {
-        today -> "Сегодня, " + d.format(DAY_FMT)
-        today.minusDays(1) -> "Вчера, " + d.format(DAY_FMT)
-        else -> d.format(WEEKDAY_FMT).replaceFirstChar { it.titlecase(RU) }
+        today -> res.getString(R.string.day_today, day)
+        today.minusDays(1) -> res.getString(R.string.day_yesterday, day)
+        else -> d.format(res.dateFormat(R.string.fmt_weekday)).replaceFirstChar { it.titlecase(res.locale()) }
     }
 }
 
 fun hm(ms: Long): String = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).format(HM)
 
 /** «сегодня 14:32», «вчера 09:10», «21 октября 18:00». */
-fun whenText(ms: Long): String {
+fun whenText(res: Resources, ms: Long): String {
     val zdt = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault())
     val d = zdt.toLocalDate()
     val today = LocalDate.now()
-    val prefix = when (d) {
-        today -> "сегодня"
-        today.minusDays(1) -> "вчера"
-        else -> d.format(DAY_FMT)
+    val time = zdt.format(HM)
+    return when (d) {
+        today -> res.getString(R.string.when_today, time)
+        today.minusDays(1) -> res.getString(R.string.when_yesterday, time)
+        else -> d.format(res.dateFormat(R.string.fmt_day)) + " " + time
     }
-    return prefix + " " + zdt.format(HM)
 }
 
 /** «12 с назад», «5 мин назад». */
-fun agoText(ms: Long, now: Long = System.currentTimeMillis()): String {
+fun agoText(res: Resources, ms: Long, now: Long = System.currentTimeMillis()): String {
     val s = ((now - ms) / 1000).coerceAtLeast(0)
     return when {
-        s < 5 -> "только что"
-        s < 60 -> "$s с назад"
-        s < 3600 -> "${s / 60} мин назад"
-        else -> "${s / 3600} ч назад"
+        s < 5 -> res.getString(R.string.ago_now)
+        s < 60 -> res.getString(R.string.ago_seconds, s.toInt())
+        s < 3600 -> res.getString(R.string.ago_minutes, (s / 60).toInt())
+        else -> res.getString(R.string.ago_hours, (s / 3600).toInt())
     }
 }
 
-/** 1 разговор, 2 разговора, 5 разговоров. */
-fun plural(n: Int, one: String, few: String, many: String): String {
-    val word = when {
-        n % 10 == 1 && n % 100 != 11 -> one
-        n % 10 in 2..4 && n % 100 !in 12..14 -> few
-        else -> many
-    }
-    return "$n $word"
-}
+/** 1 разговор, 2 разговора, 5 разговоров — по правилам языка ресурсов. */
+fun Resources.count(id: Int, n: Int): String = getQuantityString(id, n, n)
 
 /** Статус разговора в ядре → по-человечески. */
-fun statusLabel(status: String): String = when (status) {
-    "open" -> "ждёт разбора"
-    "closed" -> "разобран"
-    "thin" -> "мало речи"
-    "noise" -> "шум"
-    "nlu_failed" -> "разбор не удался"
+fun statusLabel(res: Resources, status: String): String = when (status) {
+    "open" -> res.getString(R.string.status_open)
+    "closed" -> res.getString(R.string.status_closed)
+    "thin" -> res.getString(R.string.status_thin)
+    "noise" -> res.getString(R.string.status_noise)
+    "nlu_failed" -> res.getString(R.string.status_nlu_failed)
     else -> status
 }
 

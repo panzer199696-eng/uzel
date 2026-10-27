@@ -1,91 +1,104 @@
-# УЗЕЛ — локальный AI-кулон
+# UZEL — a local AI pendant
 
-> Узелок на память · узел сети · узел конструкции.
+[![Русский](https://img.shields.io/badge/язык-Русский-red)](README.ru.md) · **Русский → [README.ru.md](README.ru.md)**
 
-Носимый диктофон-компаньон. Кулон на груди пишет звук, ПК расшифровывает его,
-достаёт из разговоров факты и задачи, кладёт заметки в Obsidian и отдаёт память
-любому агенту через MCP. **Звук и его разбор не покидают ваш компьютер.**
-Облачные бэкенды в коде есть, но по умолчанию выключены, и каждый прямо
-помечен как облако.
+> *Uzel* is Russian for "knot": a knot to remember by · a network node · a structural joint.
 
-Это ответ на кулоны вроде Omi: то же самое, но без подписки и без чужого
-сервера, с русским языком в приоритете. Принципы проекта изложены в
-**[MANIFESTO.md](MANIFESTO.md)**.
+A wearable voice-recorder companion. The pendant on your chest records audio,
+your PC transcribes it, pulls facts and tasks out of conversations, puts notes
+into Obsidian and gives the memory to any agent over MCP. **Audio and its
+analysis never leave your computer.** The code does contain cloud backends,
+but they are off by default and each one is explicitly marked as cloud.
 
-## Состояние (27.10.2026)
+It is an answer to pendants like Omi: the same idea, but without a
+subscription and without someone else's server, in English and Russian (any
+other language is added with a translation file). The project's principles
+are in **[MANIFESTO.en.md](MANIFESTO.en.md)** ([Русский](MANIFESTO.md)).
 
-| Часть | Версия | Состояние |
+## Status (27.10.2026)
+
+| Part | Version | State |
 |---|---|---|
-| Прошивка кулона | 0.1.2 | Своя, выросла из Omi DK2 2.0.10. Звук без гула, шифрованная связь, обновление по воздуху проверено на кулоне с ПК и с телефона — [firmware/](firmware/README.md), [CHANGELOG](firmware/CHANGELOG.md) |
-| Корпус | v2.4 | Рассчитан и проверен на ПК (замкнутость сеток, посадки, ход клипсы), выгружен под печать. **Ещё не напечатан** — [hardware/case-v2/](hardware/case-v2/HANDOFF.md) |
-| Android-клиент | 0.3.1 | Свой, на Kotlin: звук с кулона, спул, экран дня, заметки, обновление прошивки кулона — [bridge/android/](bridge/android/README.md) |
-| ПК-ядро | 0.9.0 | Python: приём, VAD, расшифровка, разбор, хранилище, выгрузка, окно в трее, MCP. Около 850 тестов на pytest, сеть не нужна |
+| Pendant firmware | 0.1.2 | Our own, grown from Omi DK2 2.0.10. Clean audio without hum, encrypted link, over-the-air updates verified on the pendant from the PC and from the phone — [firmware/](firmware/README.en.md) |
+| Case | v2.4 | Computed and checked on the PC (closed meshes, fits, clip travel), exported for printing. **Not printed yet** — [hardware/case-v2/](hardware/case-v2/HANDOFF.md) |
+| Android client | 0.3.1 | Our own, in Kotlin: audio from the pendant, spool, day screen, notes, pendant firmware update — [bridge/android/](bridge/android/README.en.md) |
+| PC core | 0.9.0 | Python: ingest, VAD, transcription, analysis, storage, export, tray window, MCP. Over 900 pytest tests, no network needed |
 
-## Что умеет
+## What it does
 
 | | |
 |---|---|
-| **Приём звука** | кулон по BLE через телефон или напрямую через ПК, `POST /ingest` (PCM) и `/ingest/opus`, вебхуки приложения Omi |
-| **Нарезка** | Silero VAD → реплики → разговоры по паузе |
-| **Расшифровка** | faster-whisper `large-v3` на своей видеокарте (`int8_float16`, ~2 ГБ видеопамяти) |
-| **Разбор** | Ollama на этом же ПК (по умолчанию `qwen3:8b`): сводка, факты с таймкодами, задачи с цитатой-основанием |
-| **Фильтр качества** | восемь правил против мусора и галлюцинаций, `uzel.cmd quality-report` |
-| **Хранилище** | SQLite + Qdrant (встроенный режим) для смыслового поиска |
-| **Выгрузка** | заметка дня в Obsidian, задачи в свой входящий файл, отчёт за день |
-| **Приватность** | ручная заглушка, пауза, окна тишины; заглушённый звук отбрасывается **до** записи на диск |
-| **Окно на ПК** | `/ui` + окно + значок в трее + автозапуск |
-| **MCP** | семь инструментов только на чтение: поиск, разговоры, день, факты, задачи |
+| **Audio ingest** | the pendant over BLE via the phone or directly via the PC, `POST /ingest` (PCM) and `/ingest/opus`, Omi app webhooks |
+| **Segmentation** | Silero VAD → utterances → conversations by pauses |
+| **Transcription** | faster-whisper `large-v3` on your own graphics card (`int8_float16`, ~2 GB of video memory), language detected automatically or fixed |
+| **Analysis** | Ollama on the same PC (`qwen3:8b` by default): summary, facts with timestamps, tasks with a supporting quote — in the interface language |
+| **Quality filter** | eight rules against junk and hallucinations, `uzel.cmd quality-report` |
+| **Storage** | SQLite + Qdrant (embedded mode) for semantic search |
+| **Export** | a day note in Obsidian, tasks into an inbox file, a daily report |
+| **Privacy** | manual mute, pause, quiet windows; muted audio is discarded **before** it is written to disk |
+| **PC window** | `/ui` + window + tray icon + autostart, English or Russian |
+| **MCP** | seven read-only tools: search, conversations, day, facts, tasks |
 
-Конвейер разнесён на два прохода: дешёвый постоянный (очередь → VAD → реплики,
-видеокарту не трогает) и ночной батч (расшифровка → разговоры → разбор → выгрузка).
-Причина простая: 6 ГБ видеопамяти не вмещают whisper и модель разбора одновременно.
+The pipeline is split into two passes: a cheap permanent one (queue → VAD →
+utterances, the GPU is untouched) and a night batch (transcription →
+conversations → analysis → export). The reason is simple: 6 GB of video
+memory cannot hold whisper and the analysis model at the same time.
 
-## Что не проверено
+## What is not verified
 
-Прочитайте этот раздел, прежде чем полагаться на проект.
+Read this section before relying on the project.
 
-- **Качество распознавания (WER) не замерено.** Оснастка готова (`uzel.cmd wer`,
-  [tests/wer/](tests/wer/README.md)), эталонной записи с дословной расшифровкой нет.
-- **Скорость расшифровки под вопросом.** Два замера на одном и том же железе
-  разошлись в восемь раз (RTF 0,091 и 0,78), причина не найдена. Запас по
-  скорости считайте неизвестным.
-- **Автономность кулона не замерена** амперметром. Цели вроде «вдвое дольше Omi»
-  пока не подтверждены.
-- **Корпус v2.4 не напечатан** и не примерен на плате.
-- **Android проверен на одном телефоне** (OPPO Find N5, ColorOS). На других
-  прошивках фоновую службу может убивать система.
-- **Сутки носки как формальный тест с отчётом не пройдены.** Автор носит кулон
-  на реальных разговорах с октября 2026, но это не замер.
-- **Фильтр качества не откалиброван**: `UZEL_QUALITY_ENFORCE=false`, пороги пока гипотезы.
-- **ПК-часть проверялась только на Windows 11.** iOS-клиента нет.
-- **Обновление прошивки по воздуху не подписано** (Legacy DFU, проверяется только CRC).
-  Защищает только то, что войти в загрузчик можно лишь по зашифрованной связи
-  с сопряжённого устройства.
-- Из замысла [архитектуры](docs/01-архитектура.md) пока **не сделаны**: жесты по
-  IMU, буфер во флеше на часы записи (сейчас кулон держит 2 с звука при обрыве
-  связи), диаризация, вебхуки, Docker.
+- **Recognition quality (WER) is not measured.** The tooling is ready
+  (`uzel.cmd wer`, [tests/wer/](tests/wer/README.md)), but there is no
+  reference recording with a verbatim transcript. English recognition has not
+  been tried on real conversations at all.
+- **Transcription speed is uncertain.** Two measurements on the same hardware
+  differed eightfold (RTF 0.091 and 0.78), the cause was not found. Consider
+  the speed margin unknown.
+- **Pendant battery life is not measured** with an ammeter. Goals like "twice
+  as long as Omi" are not confirmed yet.
+- **Case v2.4 is not printed** and not fitted on a board.
+- **Android is verified on one phone** (OPPO Find N5, ColorOS). On other
+  firmwares the system may kill the background service.
+- **A full day of wearing as a formal test with a report has not been done.**
+  The author wears the pendant in real conversations since October 2026, but
+  that is not a measurement.
+- **The quality filter is not calibrated**: `UZEL_QUALITY_ENFORCE=false`, the
+  thresholds are still hypotheses.
+- **The PC part is verified only on Windows 11.** There is no iOS client.
+- **Over-the-air firmware updates are not signed** (Legacy DFU, only the CRC is
+  checked). The only protection is that the bootloader can be entered only
+  over an encrypted link from a paired device.
+- From the [architecture](docs/01-архитектура.md) plan, the following are
+  **not done yet**: IMU gestures, an hours-long flash buffer (the pendant now
+  keeps 2 s of audio when the link drops), diarization, webhooks, Docker.
+- Most design documents in `docs/` are in Russian; the install guide, the
+  pendant build guide, the Android and firmware READMEs have English versions.
 
-## Запись разговоров и закон
+## Recording conversations and the law
 
-Кулон слышит не только вас. Записывая, вы отвечаете и за чужие слова.
+The pendant hears more than just you. When you record, you are responsible
+for other people's words too.
 
-- **Предупреждайте собеседников**, что идёт запись. Светодиод на кулоне — не
-  замена словам.
-- **Соблюдайте законы своей страны** о записи разговоров, о неприкосновенности
-  частной жизни и о персональных данных. Во многих странах для записи нужно
-  согласие всех участников. Разговоры и голоса других людей — это их
-  персональные данные.
-- Выключайте запись там, где её не ждут: у врача, на переговорах, в гостях. Для
-  этого есть кнопка «Приват», пауза и окна тишины по расписанию.
-- Если включаете облачные бэкенды, вы отправляете чужие разговоры третьей стороне.
+- **Tell the people you talk to** that you are recording. The LED on the
+  pendant does not replace words.
+- **Follow the laws of your country** on recording conversations, privacy and
+  personal data. Many countries require the consent of all participants.
+  Other people's conversations and voices are their personal data.
+- Turn recording off where nobody expects it: at the doctor's, in
+  negotiations, at someone's home. That is what the "Private" button, pause and
+  scheduled quiet windows are for.
+- If you enable cloud backends, you are sending other people's conversations
+  to a third party.
 
-Проект предоставляется «как есть» (см. [LICENSE](LICENSE)). Как вы применяете
-устройство, решаете вы.
+The project is provided "as is" (see [LICENSE](LICENSE)). How you use the
+device is up to you.
 
-## Установка ПК-части
+## Installing the PC part
 
-Пошагово, от пустой папки до работающего ядра:
-**[docs/07-установка.md](docs/07-установка.md)**. Коротко (Windows, Python 3.12):
+Step by step, from an empty folder to a working core:
+**[docs/en/07-install.md](docs/en/07-install.md)**. In short (Windows,
+Python 3.12):
 
 ```powershell
 git clone https://github.com/panzer199696-eng/uzel.git uzel
@@ -99,77 +112,109 @@ copy .env.example %USERPROFILE%\uzel-data\.env
 uzel.cmd serve              # http://127.0.0.1:8770/ui
 ```
 
-## Собрать кулон
+## Building the pendant
 
-Список деталей, схема подключения, пайка, печать корпуса, загрузчик и прошивка
-описаны в **[docs/09-сборка-кулона.md](docs/09-сборка-кулона.md)**.
-Подойдёт и уже собранный кулон Omi: мост работает с ним «как есть».
+The parts list, wiring, soldering, case printing, bootloader and firmware are
+described in **[docs/en/09-build-the-pendant.md](docs/en/09-build-the-pendant.md)**.
+An Omi pendant you already own works too: the bridge works with it as is.
 
-## Готовые сборки
+## Ready builds
 
-Лежат в **Releases** репозитория:
-- прошивка: `uzel-fw-<версия>.uf2` (по кабелю), `.hex` (по воздуху с ПК),
-  `-dfu.zip` (по воздуху с телефона);
-- Android-клиент: APK, **подписанный отладочным ключом**. Подробности
-  в [bridge/android/README.md](bridge/android/README.md);
-- корпус: `uzel_case_v<версия>_plate.3mf`, если выложен. Иначе его собирает
-  скрипт из репозитория.
+They are in the repository **Releases**:
+- firmware: `uzel-fw-<version>.uf2` (by cable), `.hex` (over the air from the
+  PC), `-dfu.zip` (over the air from the phone);
+- Android client: an APK **signed with a debug key**. Details in
+  [bridge/android/README.en.md](bridge/android/README.en.md);
+- case: `uzel_case_v<version>_plate.3mf`, if published. Otherwise the script in
+  the repository builds it.
 
-## Чем отличается от Omi
+## Languages
 
-Сравнение честное: слева то, что Omi делает сегодня, справа то, что **работает**
-в УЗЛЕ, а не то, что задумано.
+The interface and output are in English or Russian: the `/ui` window, tray,
+CLI, MCP answers, Obsidian notes — and **summaries, facts and tasks are
+written in the interface language** even if the conversation was in another
+one. The transcript stays verbatim in the original language.
 
-| | Omi | УЗЕЛ |
+| What | How to switch |
+|---|---|
+| interface language | the switcher in the `/ui` window header (stored in `UZEL_DATA_DIR\language.txt`) or `UZEL_LANG=en` / `ru` / `auto` in `.env`; `auto` is the system language if translated, otherwise English |
+| recognition language | `UZEL_STT_LANGUAGE=auto` (whisper detects it) or a whisper code: `en`, `ru`, … If you speak one language, set it explicitly |
+| Android client | follows the phone language; on Android 13+ also Settings → Language in the app |
+
+In `auto` recognition mode short utterances (under 4 s) borrow the language of
+confidently detected long ones from the same batch: on 1–3 s clips whisper
+often mistakes the language.
+
+**Adding a language** (German, code `de`, as an example):
+1. Copy `core/uzel/locales/en.json` to `core/uzel/locales/de.json` and
+   translate the values. Do not touch the keys or the `{…}` parameters. The
+   same file holds the analysis prompts (`nlu.prompt.*`: keep the JSON schema,
+   "Write in German"), weekday names, "empty" words and deadline cues for the
+   analysis, whisper hallucination stop phrases (`stt.hallucination.*`) and the
+   Obsidian folder names. `pytest tests/test_i18n.py` checks that keys and
+   parameters match.
+2. Android: copy `bridge/android/app/src/main/res/values/strings.xml` to
+   `values-de/strings.xml`, translate it, add `de` to
+   `res/xml/locales_config.xml`. `gradlew :core:test` checks the parity.
+3. Plural forms: an object with `one/few/many/other` in the catalogue; the
+   rules for `ru`, `uk`, `be` and "one/other" for the rest are in
+   `core/uzel/i18n.py`.
+
+## How it differs from Omi
+
+An honest comparison: on the left what Omi does today, on the right what
+**works** in UZEL, not what is planned.
+
+| | Omi | UZEL |
 |---|---|---|
-| Где обрабатывается звук | облако | ваш ПК, целиком |
-| Где разбирается разговор | облако | Ollama на вашем ПК |
-| Цена | подписка | 0 ₽, своё железо |
-| Заглушка | в приложении | ядро отбрасывает звук до записи на диск |
-| Куда ложится знание | их приложение | Obsidian + SQLite + MCP для любого агента |
-| Чужое железо | — | работает с уже купленным кулоном Omi |
-| Качество русского | не заявлено | whisper `large-v3`, **WER не замерен** |
-| Зрелость | продукт | рабочий прототип одного автора |
+| Where audio is processed | cloud | your PC, entirely |
+| Where conversations are analysed | cloud | Ollama on your PC |
+| Price | subscription | 0, your own hardware |
+| Mute | in the app | the core discards audio before writing it to disk |
+| Where knowledge goes | their app | Obsidian + SQLite + MCP for any agent |
+| Other hardware | — | works with an Omi pendant you already own |
+| Recognition quality | not stated | whisper `large-v3`, **WER not measured** |
+| Maturity | a product | a working prototype by one author |
 
-У Omi больше зрелости, и его носят тысячи людей. Преимущество УЗЛА в том, что
-запись остаётся дома.
+Omi is more mature, and thousands of people wear it. UZEL's advantage is that
+the recording stays at home.
 
-## Структура
+## Layout
 
 ```
-core/uzel/           ядро: приём → VAD → сегментация → STT → NLU → хранилище → экспорт
-  stt/  nlu.py       расшифровка и разбор, роутер бэкендов с предохранителем
-  worker.py          два прохода конвейера
-  quality.py         фильтр B1–B8
-  ui/  desktop.py    страница, окно, трей
-  omi/               приём вебхуков приложения Omi
-bridge/uzel_bridge/  мост BLE на ПК (bleak): протокол Omi, сопряжение, DFU
-bridge/android/      Android-клиент: :core (чистый Kotlin) + :app (BLE, служба, экран)
-firmware/            прошивка кулона (Zephyr / nRF Connect SDK 2.7)
-hardware/case-v2/    корпус: скрипты сборки 3MF, исходные модели Omi Triangle v1
-integrations/mcp/    MCP-сервер, stdio, без сторонних зависимостей
-tests/               pytest; сеть не нужна
-tools/               служебные инструменты (публичная выгрузка репозитория)
+core/uzel/           core: ingest → VAD → segmentation → STT → NLU → storage → export
+  stt/  nlu.py       transcription and analysis, backend router with a fuse
+  worker.py          the two pipeline passes
+  quality.py         filter B1–B8
+  i18n.py locales/   localisation: catalogues ru.json, en.json
+  ui/  desktop.py    page, window, tray
+  omi/               Omi app webhooks
+bridge/uzel_bridge/  BLE bridge on the PC (bleak): Omi protocol, pairing, DFU
+bridge/android/      Android client: :core (pure Kotlin) + :app (BLE, service, UI)
+firmware/            pendant firmware (Zephyr / nRF Connect SDK 2.7)
+hardware/case-v2/    case: 3MF build scripts, original Omi Triangle v1 models
+integrations/mcp/    MCP server, stdio, no third-party dependencies
+tests/               pytest; no network needed
+tools/               helper tools (public repository export)
 ```
 
-Данные (база, аудио, `.env`) хранятся **вне репозитория**, в `UZEL_DATA_DIR`.
+Data (database, audio, `.env`) is kept **outside the repository**, in
+`UZEL_DATA_DIR`.
 
-## Документы
+## Documents
 
-- [Манифест](MANIFESTO.md)
-- [Установка с нуля](docs/07-установка.md)
-- [Сборка кулона](docs/09-сборка-кулона.md)
-- [Первый день с кулоном](docs/08-первый-боевой-день.md)
-- [Концепция и позиционирование](docs/00-концепция.md)
-- [Архитектура](docs/01-архитектура.md)
-- [Дорожная карта](docs/02-дорожная-карта.md)
-- [Риски и открытые решения](docs/03-риски-и-решения.md)
-- [Разбор Omi: что берём, что чиним](docs/04-разбор-omi.md)
-- [Совместимость с приложением Omi](docs/06-совместимость-с-приложением-omi.md)
-- [Android-клиент](bridge/android/README.md) · [Прошивка](firmware/README.md)
+- [Manifesto](MANIFESTO.en.md)
+- [Install from scratch](docs/en/07-install.md)
+- [Build the pendant](docs/en/09-build-the-pendant.md)
+- [Android client](bridge/android/README.en.md) · [Firmware](firmware/README.en.md)
+- In Russian only for now: [first day with the pendant](docs/08-первый-боевой-день.md),
+  [concept](docs/00-концепция.md), [architecture](docs/01-архитектура.md),
+  [roadmap](docs/02-дорожная-карта.md), [risks](docs/03-риски-и-решения.md),
+  [Omi teardown](docs/04-разбор-omi.md),
+  [Omi app compatibility](docs/06-совместимость-с-приложением-omi.md)
 
-## Лицензия
+## License
 
-MIT — [LICENSE](LICENSE). Сторонние компоненты (прошивка Omi, Opus, драйвер
-батареи, Silero VAD, корпус Omi Triangle v1) и их лицензии перечислены в
+MIT — [LICENSE](LICENSE). Third-party components (Omi firmware, Opus, battery
+driver, Silero VAD, Omi Triangle v1 case) and their licenses are listed in
 [NOTICE](NOTICE).

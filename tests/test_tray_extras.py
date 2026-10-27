@@ -336,3 +336,41 @@ def test_bridge_cli_reconnect_max():
 
     assert build_parser().parse_args([]).reconnect_max == 60.0
     assert build_parser().parse_args(["--reconnect-max", "10"]).reconnect_max == 10.0
+
+
+# --- английский интерфейс (27.10.2026) ---
+
+
+def test_tray_texts_in_english():
+    from uzel import i18n
+    from uzel.desktop import tray_tooltip
+    from uzel.tray_extras import BatteryAlerts, device_line
+
+    i18n.set_language("en")
+    status = {
+        "privacy": {"код": "allowed"},
+        "queue": {"pending": 3},
+        "device": {"known": True, "connected": True, "stale": False, "battery_percent": 80, "uid": "pendant-pc"},
+    }
+    assert tray_tooltip(status) == "UZEL · recording · 3 queued"
+    assert device_line(status) == "Pendant: online · 80 % · via PC"
+    assert tray_tooltip({"privacy": {"код": "paused", "причина": "x"}}) == "UZEL · off: x"
+    assert BatteryAlerts().observe(9) == "Pendant battery 9 % — time to charge"
+
+
+def test_batch_summary_reads_output_of_any_language():
+    """Батч напечатал итог по-русски, а трей уже английский — и наоборот."""
+    from uzel import i18n
+    from uzel.tray_extras import batch_summary
+
+    ru_output = "расшифровано реплик: 5\nсобрано разговоров: 2\nзадач выгружено: 1\nошибок расшифровки: 0\n"
+    en_output = "utterances transcribed: 5\nconversations assembled: 2\ntasks exported: 1\ntranscription errors: 2\n"
+    i18n.set_language("en")
+    assert batch_summary(ru_output) == (
+        "Transcription done: utterances transcribed 5, conversations assembled 2, tasks exported 1"
+    )
+    i18n.set_language("ru")
+    assert batch_summary(en_output) == (
+        "Расшифровка готова: расшифровано реплик 5, собрано разговоров 2, "
+        "задач выгружено 1, ошибок расшифровки 2"
+    )

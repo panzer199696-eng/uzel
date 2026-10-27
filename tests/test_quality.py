@@ -266,3 +266,54 @@ def test_thresholds_from_settings_reads_quality_fields():
 
 def test_thresholds_from_settings_matches_defaults():
     assert Thresholds.from_settings(Settings()) == Thresholds()
+
+
+# --- языки (локализация, 27.10.2026) ---
+
+
+def test_b3_hallucination_rejects_english_subtitle_phrase():
+    verdict = check_utterance("Thank you for watching.", expected_language="en")
+
+    assert verdict.reason == "hallucination"
+
+
+def test_b4_lang_noise_is_off_without_expected_language():
+    """UZEL_STT_LANGUAGE=auto и язык разговора неизвестен — B4 не судит."""
+    verdict = check_utterance("hello world check", language="en", expected_language=None)
+
+    assert verdict.accepted
+
+
+def test_b4_lang_noise_works_for_english_expected():
+    verdict = check_utterance("привет как дела", language="ru", expected_language="en")
+
+    assert verdict.reason == "lang_noise"
+
+
+def test_details_follow_interface_language():
+    from uzel import i18n
+
+    i18n.set_language("en")
+    verdict = check_utterance("so so so so so so", expected_language="en")
+    assert verdict.reason == "looped"
+    assert "repeated 6 times in a row" in verdict.detail
+
+    sparse = check_utterance("we check order six", speech_seconds=30.0, expected_language="en")
+    assert sparse.reason == "too_sparse"
+    assert "chars/s" in sparse.detail
+
+
+def test_reason_titles_by_language():
+    from uzel.quality import reason_title
+
+    assert reason_title("looped", lang="ru") == "зацикливание"
+    assert reason_title("looped", lang="en") == "looped"
+    assert reason_title("непонятное", lang="en") == "непонятное"
+
+
+def test_dominant_language_weighs_by_text_length():
+    from uzel.quality import dominant_language
+
+    rows = [("en", "a long english utterance about the concrete delivery"), ("ru", "да"), (None, "x")]
+    assert dominant_language(rows) == "en"
+    assert dominant_language([]) is None

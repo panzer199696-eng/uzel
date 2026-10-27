@@ -7,6 +7,9 @@
 Тяжёлые импорты (webview, pystray, PIL, uvicorn) живут внутри функций:
 ``import uzel.desktop`` должен работать там, где GUI нет, и не тянуть
 WinForms в тесты.
+
+Подписи меню — функции, а не строки: язык можно сменить в окне, и меню
+трея перерисуется уже на новом языке без перезапуска.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import Settings
+from .i18n import t
 
 log = logging.getLogger(__name__)
 
@@ -39,10 +43,10 @@ def tray_tooltip(status: dict) -> str:
     privacy = status.get("privacy") or {}
     if privacy.get("код") == "allowed":
         pending = (status.get("queue") or {}).get("pending")
-        tail = f" · в очереди {pending}" if isinstance(pending, int) else ""
-        return f"УЗЕЛ · запись идёт{tail}"
-    reason = privacy.get("причина") or "причина неизвестна"
-    return f"УЗЕЛ · выключена: {reason}"
+        tail = t("tray.tooltip.queue", n=pending) if isinstance(pending, int) else ""
+        return t("tray.tooltip.recording", tail=tail)
+    reason = privacy.get("причина") or t("tray.reason_unknown")
+    return t("tray.tooltip.off", reason=reason)
 
 
 def tray_title(status: dict) -> str:
@@ -150,9 +154,7 @@ class CoreServer:
             try:
                 probe.bind((host, port))
             except OSError as exc:
-                raise RuntimeError(
-                    f"порт {port} уже занят: ядро уже запущено?"
-                ) from exc
+                raise RuntimeError(t("tray.port_busy", port=port)) from exc
             finally:
                 probe.close()
 
@@ -257,37 +259,40 @@ class TrayController:
         from .tray_extras import device_line
 
         Item = pystray.MenuItem
+        def label(key: str):
+            return lambda _i: t(key)
+
         self._icon = pystray.Icon(
-            "УЗЕЛ",
+            "УЗЕЛ",  # внутреннее имя значка, не подпись
             icon=tray_image("waiting"),
-            title="УЗЕЛ",
+            title=t("tray.title"),
             menu=pystray.Menu(
                 Item(lambda _i: device_line(self._status), None, enabled=False),
-                Item("Открыть окно", self._open_window, default=True),
+                Item(label("tray.open"), self._open_window, default=True),
                 pystray.Menu.SEPARATOR,
                 Item(
-                    "Мост с ПК (телефон кулон не увидит)",
+                    label("tray.bridge"),
                     self._toggle_bridge,
                     checked=lambda _i: self.bridge.alive,
                 ),
                 Item(
                     lambda _i: (
-                        "Расшифровка идёт…"
+                        t("tray.batch_running")
                         if self.batch.running
-                        else "Расшифровать сейчас"
+                        else t("tray.batch_start")
                     ),
                     self._run_batch,
                     enabled=lambda _i: not self.batch.running,
                 ),
                 pystray.Menu.SEPARATOR,
-                Item("Пауза 30 минут", self._mute),
-                Item("Приват", self._pause),
-                Item("Возобновить запись", self._unmute),
+                Item(label("tray.mute"), self._mute),
+                Item(label("tray.pause"), self._pause),
+                Item(label("tray.resume"), self._unmute),
                 pystray.Menu.SEPARATOR,
-                Item("Отчёт за сегодня", self._open_report),
-                Item("Журнал моста", self._open_bridge_log),
+                Item(label("tray.report"), self._open_report),
+                Item(label("tray.bridge_log"), self._open_bridge_log),
                 pystray.Menu.SEPARATOR,
-                Item("Выход", self._exit),
+                Item(label("tray.exit"), self._exit),
             ),
         )
         self._icon.run_detached()
@@ -318,7 +323,7 @@ class TrayController:
             self._refresh_menu(force=True)
 
         if self.batch.start(done):
-            self._notify("Расшифровка запущена — уведомлю, когда закончится")
+            self._notify(t("tray.notify.batch_started"))
             self._refresh_menu(force=True)
 
     def _open_report(self, *_args) -> None:
@@ -328,23 +333,23 @@ class TrayController:
 
         report_dir = getattr(self._settings, "report_dir", None)
         if report_dir is None:
-            self._notify("Папка отчётов не задана (UZEL_REPORT_DIR)")
+            self._notify(t("tray.notify.no_report_dir"))
             return
         path = Path(report_dir) / f"{date.today().isoformat()}.txt"
         if not open_path(path):
-            self._notify("Отчёта за сегодня ещё нет — он пишется после расшифровки")
+            self._notify(t("tray.notify.no_report"))
 
     def _open_bridge_log(self, *_args) -> None:
         from .tray_extras import open_path
 
         if not open_path(self._logs / "bridge-pc.log"):
-            self._notify("Мост с ПК ещё не запускался")
+            self._notify(t("tray.notify.no_bridge_log"))
 
     def _notify(self, text: str) -> None:
         if self._icon is None:
             return
         try:
-            self._icon.notify(text, "УЗЕЛ")
+            self._icon.notify(text, t("tray.title"))
         except Exception:
             log.info("уведомление не показано: %s", text)
 
@@ -353,7 +358,13 @@ class TrayController:
         update_menu() пересобирает его целиком."""
         from .tray_extras import device_line
 
-        key = (device_line(self._status), self.bridge.alive, self.batch.running)
+        # Язык в ключе: смена языка в окне перерисовывает меню.
+        key = (
+            device_line(self._status),
+            self.bridge.alive,
+            self.batch.running,
+            t("tray.open"),
+        )
         if not force and key == self._last_menu_key:
             return
         self._last_menu_key = key
@@ -456,7 +467,7 @@ class TrayController:
             self._last_bridge_fix = now
             self.bridge.restart()
             log.warning("мост с ПК завис — перезапустил (%d-й раз)", self.bridge.restarts)
-            return "Мост с ПК завис — перезапустил"
+            return t("tray.notify.bridge_hung")
         return None
 
     def shutdown(self) -> None:
@@ -484,7 +495,7 @@ def run_app(settings: Settings, options: AppOptions | None = None) -> int:
         return 1
 
     if not server.wait_ready():
-        print("ядро не поднялось за отведённое время — посмотрите журнал")
+        print(t("tray.core_not_ready"))
         server.stop()
         return 1
 
@@ -495,7 +506,7 @@ def run_app(settings: Settings, options: AppOptions | None = None) -> int:
         import webview
 
         window = webview.create_window(
-            "УЗЕЛ",
+            t("tray.title"),
             f"{server.url}/ui",
             width=1100,
             height=760,
@@ -571,23 +582,26 @@ def main(argv: list[str] | None = None) -> int:
     from .config import get_settings
     from .logging_setup import setup_logging
 
-    parser = argparse.ArgumentParser(prog="uzel-app", description="УЗЕЛ — окно и трей")
-    parser.add_argument("--host", default=None, help="адрес ядра")
-    parser.add_argument("--port", type=int, default=None, help="порт ядра")
-    parser.add_argument("--no-window", action="store_true", help="только сервер и трей")
-    parser.add_argument("--no-tray", action="store_true", help="без трея")
-    parser.add_argument(
-        "--hidden", action="store_true", help="стартовать свёрнутым в трей"
+    from . import i18n
+
+    settings = get_settings()
+    i18n.configure(settings)
+    parser = argparse.ArgumentParser(
+        prog="uzel-app", description=t("cli.help.app_description")
     )
+    parser.add_argument("--host", default=None, help=t("cli.help.host"))
+    parser.add_argument("--port", type=int, default=None, help=t("cli.help.port"))
+    parser.add_argument("--no-window", action="store_true", help=t("cli.help.no_window"))
+    parser.add_argument("--no-tray", action="store_true", help=t("cli.help.no_tray"))
+    parser.add_argument("--hidden", action="store_true", help=t("cli.help.hidden"))
     parser.add_argument(
         "--autoclose",
         type=float,
         default=None,
-        help="закрыть окно через N секунд (для проверок)",
+        help=t("cli.help.autoclose"),
     )
     args = parser.parse_args(argv)
 
-    settings = get_settings()
     _ensure_streams(settings.data_dir / "logs" / "app.log")
     setup_logging(settings.log_level)
     options = AppOptions(

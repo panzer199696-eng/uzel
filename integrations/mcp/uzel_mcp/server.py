@@ -5,119 +5,137 @@ from __future__ import annotations
 import logging
 import sys
 
+from uzel import i18n
+from uzel.i18n import t
+
 from . import SERVER_NAME, SERVER_VERSION
 from .protocol import MethodNotFound, negotiate_protocol, serve
 from .tools import UzelTools
 
 log = logging.getLogger(__name__)
 
-TOOL_SPECS = [
-    {
-        "name": "search",
-        "description": "Найти реплику в памяти по слову или смыслу — когда нужно вспомнить, что и когда говорилось.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "поисковый запрос"},
-                "limit": {
-                    "type": "integer",
-                    "description": "сколько результатов отдать (по умолчанию 10)",
-                },
-                "semantic": {
-                    "type": "boolean",
-                    "description": "сначала смысловой поиск, при неудаче подстрочный (по умолчанию)",
-                },
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "conversation",
-        "description": "Показать разговор по id: саммари, факты, задачи, темы, участников — детали разбора дня.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "id": {"type": "integer", "description": "id разговора"},
-                "with_utterances": {
-                    "type": "boolean",
-                    "description": "добавить дословные реплики (по умолчанию нет)",
-                },
-            },
-            "required": ["id"],
-        },
-    },
-    {
-        "name": "day",
-        "description": "Обзор суток: разговоры с интервалами и счётчиками — когда нужен отчёт «что было в этот день».",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "date": {
-                    "type": "string",
-                    "description": "сутки ГГГГ-ММ-ДД; без значения — сегодня",
-                },
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "facts",
-        "description": "Факты за период до N суток назад — когда нужны упомянутые обстоятельства без чтения реплик.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "date": {
-                    "type": "string",
-                    "description": "конечные сутки ГГГГ-ММ-ДД; без значения — сегодня",
-                },
-                "days": {
-                    "type": "integer",
-                    "description": "сколько суток захватить, считая от конечного (по умолчанию 1)",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "максимум фактов (по умолчанию 50)",
-                },
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "tasks",
-        "description": "Задачи из разговоров по статусу и, при желании, за конкретный день.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "status": {
-                    "type": "string",
-                    "enum": ["open", "done", "all"],
-                    "description": "какие задачи показать (по умолчанию open)",
-                },
-                "date": {
-                    "type": "string",
-                    "description": "только задачи разговоров этих суток, ГГГГ-ММ-ДД",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "максимум задач (по умолчанию 50)",
-                },
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "stats",
-        "description": "Статистика памяти: сколько накоплено, очередь приёма, размер смыслового индекса.",
-        "inputSchema": {"type": "object", "properties": {}, "required": []},
-    },
-    {
-        "name": "privacy",
-        "description": "Статус приватности: пишется ли сейчас, стоп-зоны и куда уходят данные.",
-        "inputSchema": {"type": "object", "properties": {}, "required": []},
-    },
-]
 
-_TOOL_NAMES = {spec["name"] for spec in TOOL_SPECS}
+def tool_specs(lang: str | None = None) -> list[dict]:
+    """Описания инструментов на языке интерфейса (каталог ``mcp.tool.*``).
+
+    Их читает модель-агент: язык описаний — язык владельца, а схемы и имена
+    инструментов от языка не зависят.
+    """
+    return [
+        {
+            "name": "search",
+            "description": t("mcp.tool.search", lang=lang),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": t("mcp.tool.search.query", lang=lang),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": t("mcp.tool.search.limit", lang=lang),
+                    },
+                    "semantic": {
+                        "type": "boolean",
+                        "description": t("mcp.tool.search.semantic", lang=lang),
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+        {
+            "name": "conversation",
+            "description": t("mcp.tool.conversation", lang=lang),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": t("mcp.tool.conversation.id", lang=lang),
+                    },
+                    "with_utterances": {
+                        "type": "boolean",
+                        "description": t("mcp.tool.conversation.with_utterances", lang=lang),
+                    },
+                },
+                "required": ["id"],
+            },
+        },
+        {
+            "name": "day",
+            "description": t("mcp.tool.day", lang=lang),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "date": {
+                        "type": "string",
+                        "description": t("mcp.tool.day.date", lang=lang),
+                    },
+                },
+                "required": [],
+            },
+        },
+        {
+            "name": "facts",
+            "description": t("mcp.tool.facts", lang=lang),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "date": {
+                        "type": "string",
+                        "description": t("mcp.tool.facts.date", lang=lang),
+                    },
+                    "days": {
+                        "type": "integer",
+                        "description": t("mcp.tool.facts.days", lang=lang),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": t("mcp.tool.facts.limit", lang=lang),
+                    },
+                },
+                "required": [],
+            },
+        },
+        {
+            "name": "tasks",
+            "description": t("mcp.tool.tasks", lang=lang),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "enum": ["open", "done", "all"],
+                        "description": t("mcp.tool.tasks.status", lang=lang),
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": t("mcp.tool.tasks.date", lang=lang),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": t("mcp.tool.tasks.limit", lang=lang),
+                    },
+                },
+                "required": [],
+            },
+        },
+        {
+            "name": "stats",
+            "description": t("mcp.tool.stats", lang=lang),
+            "inputSchema": {"type": "object", "properties": {}, "required": []},
+        },
+        {
+            "name": "privacy",
+            "description": t("mcp.tool.privacy", lang=lang),
+            "inputSchema": {"type": "object", "properties": {}, "required": []},
+        },
+    ]
+
+
+# Имена инструментов от языка не зависят.
+_TOOL_NAMES = {spec["name"] for spec in tool_specs("en")}
 
 
 def _tool_result(text: str, *, is_error: bool) -> dict:
@@ -133,12 +151,14 @@ def _call_tool(tools: UzelTools, params: dict) -> dict:
     name = params.get("name")
     arguments = params.get("arguments") or {}
     if name not in _TOOL_NAMES:
-        return _tool_result(f"неизвестный инструмент: {name!r}", is_error=True)
+        return _tool_result(t("mcp.err.unknown_tool", name=repr(name)), is_error=True)
     try:
         text = getattr(tools, name)(**arguments)
     except Exception as exc:
         log.exception("инструмент %s упал", name)
-        return _tool_result(f"инструмент {name} не смог ответить: {exc}", is_error=True)
+        return _tool_result(
+            t("mcp.err.tool_failed", name=name, error=exc), is_error=True
+        )
     return _tool_result(text, is_error=False)
 
 
@@ -154,7 +174,7 @@ def build_dispatch(tools: UzelTools):
                 "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
             }
         if method == "tools/list":
-            return {"tools": TOOL_SPECS}
+            return {"tools": tool_specs()}
         if method == "tools/call":
             return _call_tool(tools, params)
         if method == "ping":
@@ -165,7 +185,7 @@ def build_dispatch(tools: UzelTools):
             return {"resources": []}
         if method == "prompts/list":
             return {"prompts": []}
-        raise MethodNotFound(f"метод не поддерживается: {method}")
+        raise MethodNotFound(t("mcp.err.method", method=method))
 
     return dispatch
 
@@ -174,6 +194,7 @@ def main(argv: list[str] | None = None) -> int:
     from uzel.config import get_settings
 
     settings = get_settings()
+    i18n.configure(settings)  # язык ответов и описаний инструментов
     # В stdout — только JSON-RPC, поэтому логи уходят в stderr.
     logging.basicConfig(
         stream=sys.stderr,

@@ -16,8 +16,9 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from .. import __version__
+from .. import __version__, i18n
 from ..config import Settings
+from ..i18n import t
 from ..storage import Storage
 
 log = logging.getLogger(__name__)
@@ -52,9 +53,7 @@ def build_router(settings: Settings) -> APIRouter:
             "worker": {
                 "stop_file": stop_file,
                 "batch_hint": (
-                    "ночной батч остановлен стоп-файлом"
-                    if stop_file
-                    else "ночной батч не запрещён"
+                    t("api.worker.stopped") if stop_file else t("api.worker.allowed")
                 ),
             },
             "quiet_windows": [window.describe() for window in gate.windows],
@@ -71,7 +70,12 @@ def build_router(settings: Settings) -> APIRouter:
             "conversations": [],
             "facts": [],
             "tasks": [],
-            "totals": {"conversations": 0, "facts": 0, "tasks": 0, "speech": "0 с"},
+            "totals": {
+                "conversations": 0,
+                "facts": 0,
+                "tasks": 0,
+                "speech": _fmt_duration(0.0),
+            },
         }
         try:
             with Storage(settings.db_path) as storage:
@@ -146,7 +150,8 @@ def build_router(settings: Settings) -> APIRouter:
                 row = storage.get_conversation(conversation_id)
                 if row is None:
                     raise HTTPException(
-                        status_code=404, detail=f"разговора {conversation_id} нет"
+                        status_code=404,
+                        detail=t("api.err.no_conversation", id=conversation_id),
                     )
 
                 fact_rows = storage.fact_rows_of(conversation_id)
@@ -202,7 +207,7 @@ def build_router(settings: Settings) -> APIRouter:
         semantic: bool = Query(True),
     ) -> dict:
         if not q.strip():
-            raise HTTPException(status_code=400, detail="пустой поисковый запрос")
+            raise HTTPException(status_code=400, detail=t("api.err.empty_query"))
 
         try:
             with Storage(settings.db_path) as storage:
@@ -221,7 +226,7 @@ def build_router(settings: Settings) -> APIRouter:
                         hits = []  # смысловой поиск недоступен — откат ниже
 
                 if hits:
-                    origin = "смысловым поиском"
+                    origin = t("api.search.semantic")
                 else:
                     # Поиск владельца: приватное тоже находится — с пометкой
                     # в выдаче (P11.2).
@@ -231,7 +236,7 @@ def build_router(settings: Settings) -> APIRouter:
                             q, limit=limit, include_private=True
                         )
                     ]
-                    origin = "подстрочным поиском"
+                    origin = t("api.search.substring")
 
                 results = []
                 for score, row in hits:
@@ -241,7 +246,7 @@ def build_router(settings: Settings) -> APIRouter:
                             "conversation_id": row.conversation_id,
                             "started": dt.datetime.fromtimestamp(
                                 row.started_at
-                            ).strftime("%d.%m %H:%M"),
+                            ).strftime(t("format.day_month_time")),
                             "speaker": _speaker_of(storage, row.id),
                             "text": (row.text or "").replace("\n", " "),
                             "score": round(score, 3) if score is not None else None,
@@ -252,7 +257,7 @@ def build_router(settings: Settings) -> APIRouter:
         except Exception as exc:
             log.warning("поиск «%s» не собрался: %s", q, exc)
             return {
-                "origin": "подстрочным поиском",
+                "origin": t("api.search.substring"),
                 "query": q,
                 "results": [],
                 "error": str(exc),
@@ -285,17 +290,53 @@ def build_router(settings: Settings) -> APIRouter:
 
         return _quality_payload(settings, day, counts)
 
+    # ---------- язык интерфейса ----------
+
+    @router.get("/language")
+    async def ui_language() -> dict:
+        return _language_payload(settings)
+
+    @router.post("/language")
+    async def ui_set_language(lang: str = Query(...)) -> dict:
+        """Выбор из окна: пишется в каталог данных и сразу действует в процессе.
+
+        ``auto`` забывает выбор — снова решает ``UZEL_LANG``.
+        """
+        code = i18n.normalize(lang)
+        if code != i18n.AUTO and code not in i18n.available_languages():
+            raise HTTPException(
+                status_code=400, detail=t("api.err.bad_language", lang=lang)
+            )
+        try:
+            i18n.save_lang_choice(settings.data_dir, code)
+        except OSError as exc:
+            log.warning("выбор языка не сохранён: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        i18n.configure(settings)
+        return _language_payload(settings)
+
     return router
+
+
+def _language_payload(settings: Settings) -> dict:
+    return {
+        "current": i18n.get_language(),
+        "choice": i18n.read_lang_choice(settings.data_dir) or i18n.AUTO,
+        "available": [
+            {"code": code, "name": i18n.language_name(code)}
+            for code in i18n.available_languages()
+        ],
+    }
 
 
 # ---------- общие помощники ----------
 
 
 def _quality_payload(settings: Settings, day: dt.date, counts: dict) -> dict:
-    from ..quality import REASON_TITLES
+    from ..quality import reason_title
 
     by_reason = [
-        {"code": code, "title": REASON_TITLES.get(code, code), "count": count}
+        {"code": code, "title": reason_title(code), "count": count}
         for code, count in sorted(
             counts["by_reason"].items(), key=lambda item: (-item[1], item[0])
         )
@@ -308,7 +349,7 @@ def _quality_payload(settings: Settings, day: dt.date, counts: dict) -> dict:
         "flagged": counts["flagged"],
         "by_reason": by_reason,
         "enforce": settings.quality_enforce,
-        "note": None if settings.quality_enforce else "фильтр помечает, но пропускает",
+        "note": None if settings.quality_enforce else t("api.quality.observe"),
     }
 
 
@@ -321,7 +362,7 @@ def _parse_day(value: str | None) -> dt.date:
     except ValueError as exc:
         raise HTTPException(
             status_code=400,
-            detail=f"дата должна быть в формате ГГГГ-ММ-ДД, получено: {value!r}",
+            detail=t("api.err.bad_date", value=repr(value)),
         ) from exc
 
 
@@ -341,12 +382,12 @@ def _fmt_hm(timestamp: float | None) -> str | None:
 def _fmt_duration(seconds: float) -> str:
     seconds = max(0.0, float(seconds))
     if seconds < 60:
-        return f"{seconds:.0f} с"
+        return t("unit.seconds", value=f"{seconds:.0f}")
     minutes = int(seconds // 60)
     if minutes < 60:
-        return f"{minutes} мин"
+        return t("unit.minutes", value=minutes)
     hours, rest = divmod(minutes, 60)
-    return f"{hours} ч {rest:02d} мин"
+    return t("unit.hours_minutes", hours=hours, minutes=f"{rest:02d}")
 
 
 def _count_chunks(directory) -> int:

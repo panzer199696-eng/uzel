@@ -21,6 +21,9 @@ h3 { font-size: 13px; font-weight: 600; color: var(--muted); }
 .brand p { font-size: 13px; color: var(--muted); margin-top: 4px; }
 .local-badge { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: #526158; border: 1px solid #dce3d9; border-radius: 20px; padding: 6px 10px; white-space: nowrap; }
 .local-badge > span { width: 6px; height: 6px; border-radius: 50%; background: #66836c; }
+.top-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.lang-field { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #526158; }
+.lang-field select { font: inherit; color: inherit; background: transparent; border: 1px solid #dce3d9; border-radius: 20px; padding: 5px 8px; }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 17px; }
 .status { padding: 24px 26px 20px; }
 .eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; color: var(--muted); margin-bottom: 7px; }

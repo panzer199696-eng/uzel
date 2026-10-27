@@ -3,6 +3,12 @@
 Ответ модели валидируется по схеме. Невалидный — один повтор с более жёсткой
 инструкцией, затем разговор помечается ``nlu_failed``. Транскрипт при этом
 остаётся: сбой модели никогда не имеет права стоить нам расшифровки.
+
+Промпты и языковые данные (дни недели, слова «пустоты», приметы срока) — в
+каталогах ``locales/<код>.json``, ключи ``nlu.*``. Сводка, факты и задачи
+пишутся на языке интерфейса, даже если разговор на другом; цитата-основание
+остаётся дословной. Списки слов берутся из ВСЕХ каталогов сразу: разговор
+бывает не на языке интерфейса.
 """
 
 from __future__ import annotations
@@ -15,6 +21,8 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
+from . import i18n
+from .i18n import t
 from .llm import LlmError, LlmLocalFused, LlmRouter
 
 log = logging.getLogger(__name__)
@@ -55,64 +63,57 @@ SYSTEM_PROMPT = """Ты разбираешь расшифровку живого
 # дословная цитата-основание у каждого пункта — её сверяет strict_items().
 # Роль владельца — настройка UZEL_USER_ROLE: «инженер на стройке» и «врач» дают модели
 # разный словарь задач. В именительном падеже, чтобы подстановка не ломала грамматику.
-DEFAULT_USER_ROLE = "пользователь"
+# Текст промпта — в каталоге языка (nlu.prompt.system); русский — дословно прежний.
+# Русские константы оставлены под старыми именами для замеров в ops/.
+SYSTEM_PROMPT_V2 = i18n.data("nlu.prompt.system", lang="ru")
+WEEKDAYS = tuple(i18n.data("nlu.weekdays", lang="ru"))
 
-SYSTEM_PROMPT_V2 = """Ты разбираешь машинную расшифровку записи с нагрудного микрофона. Владелец микрофона: {role}. Дата записи: {date} ({weekday}).
-Микрофон пишет всё подряд: рабочие разговоры, бытовые, звонки, а ещё игры, фильмы и видео, которые смотрят или в которые играют.
+# Вид записи: код → слово языка (nlu.kind.<код>). По убыванию веса: в разговоре
+# с делом — это дело.
+KIND_CODES = ("work", "home", "leisure")
 
-Верни СТРОГО один объект JSON, без пояснений и markdown:
-{{
-  "kind": "дело" | "быт" | "досуг",
-  "summary": "2–4 предложения по существу",
-  "tasks": [{{"text": "глагол + что именно + с кем/по чему", "owner": "я | имя | пусто", "quote": "дословная фраза-основание", "due": "ГГГГ-ММ-ДД или пусто"}}],
-  "decisions": [{{"text": "о чём договорились", "quote": "дословная фраза"}}],
-  "facts": [{{"text": "законченное утверждение", "at": "ЧЧ:ММ", "quote": "дословная фраза"}}],
-  "topics": ["тема"],
-  "people": ["имя"]
-}}
-
-Правила:
-- kind: "дело" — работа, деньги, документы, договорённости; "быт" — семья, покупки, здоровье; "досуг" — игра, фильм, видео, шутки и болтовня.
-- Действия внутри игры, фильма, сериала или книги — НЕ задачи и НЕ факты (персонажи, улики, квесты, сюжет).
-- Задача — только реальное обязательство: кто-то берёт действие на себя («сделаю», «скину», «позвоню») или поручает другому («позвони», «надо тебе»). Рассуждения, вопросы, пересказ — не задачи. Лучше пропустить сомнительную задачу, чем выдумать.
-- quote — ДОСЛОВНЫЙ кусок расшифровки, 3–15 слов. Нет такой фразы — не включай пункт.
-- owner: "я" — если действие берёт на себя говорящий; имя — если поручают названному человеку; пусто — если неясно. Слово null не пиши.
-- due — только если срок прозвучал явно; «завтра», «в пятницу» пересчитай от даты записи. Иначе пусто.
-- Факт — законченное утверждение с конкретикой: число, дата, имя, документ, сумма, решение. Обрывки реплик — не факты. Не больше 6.
-- Пиши по-русски. Очевидные ошибки распознавания исправляй по смыслу, в quote оставляй как в расшифровке."""
-
-WEEKDAYS = ("понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье")
-KINDS = ("дело", "быт", "досуг")  # по убыванию веса: в разговоре с делом — это дело
-
-# Модели пишут «пустоту» словами: "null", "пусто", "некто", "название" (буквально из схемы).
-_NULLISH = {
-    "", "null", "none", "nil", "нет", "пусто", "-", "—", "не указано", "неизвестно",
-    "неясно", "некто", "кто-то", "другой", "название", "имя", "он", "она", "они",
+# Модели пишут «пустоту» словами: "null", "пусто", "некто", "название" (буквально
+# из схемы). Общие знаки — здесь, слова языков — в каталогах (nlu.nullish).
+_NULLISH = {"", "null", "none", "nil", "-", "—"} | {
+    word for words in i18n.data_all("nlu.nullish") for word in words
 }
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # В цитате должно звучать время, иначе срок модель додумала («завтра» на всё подряд).
+# Приметы срока — из каталогов всех языков (nlu.due_cues) плюс числовая дата.
 _DUE_CUE = re.compile(
-    r"сегодня|завтра|послезавтра|понедельник|вторник|сред[уаы]|четверг|пятниц|суббот|"
-    r"воскресен|недел|месяц|числ|срок|\bдо\s+\d|\bк\s+\d|январ|феврал|\bмарт|апрел|\bма[яй]\b|"
-    r"июн|июл|август|сентябр|октябр|ноябр|декабр|\d{1,2}[./]\d{1,2}",
+    "|".join(
+        [cue for cues in i18n.data_all("nlu.due_cues") for cue in cues]
+        + [r"\d{1,2}[./]\d{1,2}"]
+    ),
     re.IGNORECASE,
 )
 GROUND_MIN = 0.8  # доля совпадения цитаты с расшифровкой (шум распознавания допустим)
 # «позвони», «надо тебе» — не задачи: нужно хотя бы два значимых слова
-_FILLER = {
-    "надо", "нужно", "тебе", "мне", "нам", "вам", "ему", "ей", "это", "что", "там", "так",
-    "вот", "все", "всё", "его", "её", "она", "они", "оно", "мы", "вы", "ты", "как", "уже",
-}
+_FILLER = {word for words in i18n.data_all("nlu.filler") for word in words}
 MIN_TASK_WORDS = 2
 
 # Пересборка 23.10.2026: детективная игра (#37) в длинном разговоре — часть кусков модель
 # сочла «делом», и игровые «задачи» прошли. Узкий вопрос по каждой задаче малая модель
-# решает надёжнее, чем вид всего куска внутри большого промпта.
-VERIFY_PROMPT = """Тебе дают задачу, извлечённую из расшифровки записи с микрофона, её цитату и соседние реплики. Определи, что это:
-A — реальное обязательство или поручение в жизни людей: работа, документы, деньги, покупки, быт;
-B — действие внутри игры, фильма, сериала, книги, шутки или пересказа чужой истории;
-C — не задача: рассуждение, вопрос, мнение или то, что уже сделано.
-Ответь СТРОГО JSON: {"class": "A" или "B" или "C"}"""
+# решает надёжнее, чем вид всего куска внутри большого промпта (nlu.prompt.verify).
+VERIFY_PROMPT = t("nlu.prompt.verify", lang="ru")
+
+
+def kind_code(raw: str | None) -> str | None:
+    """Вид записи на любом языке («дело», "work") → код; незнакомое — ``None``."""
+    text = (raw or "").strip().lower()
+    if text in KIND_CODES:
+        return text
+    for lang in i18n.available_languages():
+        for code in KIND_CODES:
+            word = i18n.catalog(lang).get(f"nlu.kind.{code}")
+            if isinstance(word, str) and word.lower() == text:
+                return code
+    return None
+
+
+def kind_word(code: str, lang: str | None = None) -> str:
+    """Код вида → слово языка интерфейса: ``leisure`` → «досуг»."""
+    return t(f"nlu.kind.{code}", lang=lang)
 
 
 def _content_words(text: str) -> list[str]:
@@ -137,7 +138,8 @@ def _clean(value: Any) -> str | None:
 
 
 def _words(text: str) -> list[str]:
-    return re.findall(r"[а-яa-z0-9]+", text.lower().replace("ё", "е"))
+    # Буквы любого алфавита и цифры: цитата бывает не на языке интерфейса.
+    return re.findall(r"[^\W_]+", text.lower().replace("ё", "е"))
 
 
 def grounding(quote: str, source: str) -> float:
@@ -169,17 +171,21 @@ def _due(raw: Any, quote: str, day: date | None) -> str | None:
 
 
 def strict_items(
-    payload: dict[str, Any], source: str, day: date | None
+    payload: dict[str, Any], source: str, day: date | None, *, lang: str | None = None
 ) -> tuple[list["NluFact"], list["NluTask"], str]:
     """Схема v2 → факты и задачи, подтверждённые расшифровкой ``source``.
 
     Пункт без цитаты или с цитатой, которой нет в расшифровке, отбрасывается.
     Досуг (игра, фильм) не даёт ни задач, ни фактов. Договорённости идут в факты
-    с пометкой «Договорились:» — отдельной таблицы под них нет.
+    с пометкой «Договорились:» — отдельной таблицы под них нет. Вид записи
+    возвращается словом языка ``lang`` (по умолчанию — интерфейса), на каком
+    бы языке его ни назвала модель.
     """
-    kind = _clean(payload.get("kind"))
-    kind = kind.lower() if kind else ""
-    if kind == "досуг":
+    raw_kind = _clean(payload.get("kind"))
+    raw_kind = raw_kind.lower() if raw_kind else ""
+    code = kind_code(raw_kind)
+    kind = kind_word(code, lang) if code else raw_kind
+    if code == "leisure":
         return [], [], kind
 
     def ok(item: Any) -> bool:
@@ -205,7 +211,7 @@ def strict_items(
     for item in payload.get("decisions") or []:
         text = _clean(item.get("text")) if isinstance(item, dict) else None
         if text and ok(item):
-            facts.append(NluFact(text=f"Договорились: {text}"))
+            facts.append(NluFact(text=t("nlu.agreed", lang=lang, text=text)))
             seen.add(text.lower())
     for item in payload.get("facts") or []:
         text = _clean(item.get("text")) if isinstance(item, dict) else None
@@ -218,16 +224,9 @@ def strict_items(
     return facts, tasks, kind
 
 
-RETRY_PROMPT = (
-    "Предыдущий ответ не разобрался как JSON. Верни ТОЛЬКО объект JSON "
-    "по описанной схеме: без текста до и после, без ``` и без комментариев."
-)
-
-MERGE_SYSTEM_PROMPT = (
-    "Слей эти пересказы одного разговора в 2–4 предложения по-русски, "
-    "без выдумок: только то, что есть в пересказах. Верни только сводный "
-    "пересказ, без вступлений."
-)
+# Повтор и сведение пересказов — тоже из каталога (nlu.prompt.retry / merge).
+RETRY_PROMPT = t("nlu.prompt.retry", lang="ru")
+MERGE_SYSTEM_PROMPT = t("nlu.prompt.merge", lang="ru")
 
 
 class NluError(RuntimeError):
@@ -258,7 +257,7 @@ class NluResult:
     people: list[str] = field(default_factory=list)
     backend: str = ""
     model: str = ""
-    kind: str = ""  # схема v2: дело / быт / досуг; пусто — старая схема
+    kind: str = ""  # схема v2: слово вида на языке разбора (дело / work…); пусто — старая схема
 
 
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
@@ -393,11 +392,14 @@ class NluProcessor:
         router: LlmRouter,
         *,
         max_chars: int = MAX_TRANSCRIPT_CHARS,
-        user_role: str = DEFAULT_USER_ROLE,
+        user_role: str | None = None,
+        lang: str | None = None,
     ) -> None:
         self.router = router
         self.max_chars = max_chars
-        self.user_role = user_role.strip() or DEFAULT_USER_ROLE
+        # Язык промптов и вывода; по умолчанию — язык интерфейса.
+        self.lang = i18n.resolve(lang) if lang else i18n.get_language()
+        self.user_role = (user_role or "").strip() or t("nlu.default_role", lang=self.lang)
 
     def analyse(
         self, transcript: str, *, allow_cloud: bool = False, day: date | None = None
@@ -478,7 +480,14 @@ class NluProcessor:
             people=people,
             backend=backend,
             model=model,
-            kind=next((k for k in KINDS if k in kinds), next(iter(kinds), "")),
+            kind=next(
+                (
+                    word
+                    for word in (kind_word(code, self.lang) for code in KIND_CODES)
+                    if word in kinds
+                ),
+                next(iter(kinds), ""),
+            ),
         )
 
     def _split_chunks(self, transcript: str) -> list[str]:
@@ -506,10 +515,15 @@ class NluProcessor:
         self, chunk: str, *, allow_cloud: bool, day: date | None = None
     ) -> NluResult:
         """Разбор одного куска: та же логика с одним повтором, что и раньше."""
-        system = SYSTEM_PROMPT_V2.format(
+        weekdays = i18n.data("nlu.weekdays", lang=self.lang)
+        system = t(
+            "nlu.prompt.system",
+            lang=self.lang,
             role=self.user_role,
-            date=day.isoformat() if day else "неизвестна",
-            weekday=WEEKDAYS[day.weekday()] if day else "день недели неизвестен",
+            date=day.isoformat() if day else t("nlu.date_unknown", lang=self.lang),
+            weekday=weekdays[day.weekday()]
+            if day
+            else t("nlu.weekday_unknown", lang=self.lang),
         )
         messages = [
             {"role": "system", "content": system},
@@ -540,7 +554,7 @@ class NluProcessor:
                 payload = extract_json(result.text)
                 summary, facts, tasks, topics, people = validate(payload)
                 if "kind" in payload:  # схема v2 — только подтверждённое расшифровкой
-                    facts, tasks, kind = strict_items(payload, chunk, day)
+                    facts, tasks, kind = strict_items(payload, chunk, day, lang=self.lang)
                     tasks = self._verify_tasks(tasks, chunk, allow_cloud=allow_cloud)
             except NluError as exc:
                 last_error = exc
@@ -549,7 +563,7 @@ class NluProcessor:
                     messages = [
                         *messages,
                         {"role": "assistant", "content": result.text[:2000]},
-                        {"role": "user", "content": RETRY_PROMPT},
+                        {"role": "user", "content": t("nlu.prompt.retry", lang=self.lang)},
                     ]
                 continue
 
@@ -575,14 +589,17 @@ class NluProcessor:
         поведение то же, что до 23.10.2026."""
         kept: list[NluTask] = []
         for task in tasks:
-            question = (
-                f"Задача: {task.text}\nЦитата: {task.quote or ''}\n\n"
-                f"Соседние реплики:\n{context_around(task.quote or task.text, chunk)}"
+            question = t(
+                "nlu.prompt.verify_question",
+                lang=self.lang,
+                task=task.text,
+                quote=task.quote or "",
+                context=context_around(task.quote or task.text, chunk),
             )
             try:
                 answer = self.router.complete(
                     [
-                        {"role": "system", "content": VERIFY_PROMPT},
+                        {"role": "system", "content": t("nlu.prompt.verify", lang=self.lang)},
                         {"role": "user", "content": question},
                     ],
                     allow_cloud=allow_cloud,
@@ -605,7 +622,7 @@ class NluProcessor:
             f"{index}. {text}" for index, text in enumerate(summaries, start=1)
         )
         messages = [
-            {"role": "system", "content": MERGE_SYSTEM_PROMPT},
+            {"role": "system", "content": t("nlu.prompt.merge", lang=self.lang)},
             {"role": "user", "content": listing},
         ]
         try:

@@ -59,12 +59,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import ru.uzel.bridge.AppViewModel
+import ru.uzel.bridge.R
 import ru.uzel.bridge.core.ConversationCard
 import ru.uzel.bridge.core.Note
 
@@ -83,7 +85,7 @@ fun NotesScreen(vm: AppViewModel) {
                 OutlinedTextField(
                     value = draft,
                     onValueChange = { draft = it },
-                    placeholder = { Text("Новая заметка…") },
+                    placeholder = { Text(stringResource(R.string.note_hint)) },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(24.dp),
                     maxLines = 5,
@@ -106,12 +108,12 @@ fun NotesScreen(vm: AppViewModel) {
                 ) {
                     Icon(
                         if (draft.isBlank()) Icons.Rounded.BookmarkAdd else Icons.AutoMirrored.Rounded.Send,
-                        contentDescription = if (draft.isBlank()) "Метка момента" else "Сохранить",
+                        contentDescription = stringResource(if (draft.isBlank()) R.string.shortcut_moment else R.string.save),
                     )
                 }
             }
             Text(
-                "Пустая — ставит метку момента: потом здесь появится разговор, который кулон записал в эту минуту.",
+                stringResource(R.string.notes_help),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 8.dp, top = 6.dp, end = 64.dp),
@@ -121,8 +123,8 @@ fun NotesScreen(vm: AppViewModel) {
             item {
                 EmptyState(
                     Icons.Rounded.EditNote,
-                    "Заметок пока нет",
-                    "Пишите мысли на ходу или ставьте метки — плитка «Метка» есть и в быстрых настройках",
+                    stringResource(R.string.notes_empty_title),
+                    stringResource(R.string.notes_empty_text),
                 )
             }
         }
@@ -176,7 +178,7 @@ private fun SwipeNote(
             )
             Surface(shape = RoundedCornerShape(24.dp), color = color, modifier = Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxSize().padding(horizontal = 24.dp), contentAlignment = Alignment.CenterEnd) {
-                    Icon(Icons.Rounded.Delete, "Удалить", tint = MaterialTheme.colorScheme.onErrorContainer)
+                    Icon(Icons.Rounded.Delete, stringResource(R.string.delete), tint = MaterialTheme.colorScheme.onErrorContainer)
                 }
             }
         },
@@ -198,6 +200,7 @@ private fun NoteCard(
 ) {
     val scheme = MaterialTheme.colorScheme
     val ctx = LocalContext.current
+    val res = ctx.resources
     var menu by remember { mutableStateOf(false) }
     // Подпись метки — в тон её фону: на закреплённой одно, на обычной другое.
     val momentInk = if (note.pinned) scheme.onSecondaryContainer else scheme.onTertiaryContainer
@@ -215,7 +218,7 @@ private fun NoteCard(
                 IconButton(onClick = onToggleDone) {
                     Icon(
                         if (note.done) Icons.Rounded.CheckCircle else Icons.Rounded.RadioButtonUnchecked,
-                        contentDescription = "Готово",
+                        contentDescription = stringResource(R.string.done),
                         tint = if (note.done) scheme.primary else scheme.outline,
                     )
                 }
@@ -225,7 +228,7 @@ private fun NoteCard(
                             Icon(Icons.Rounded.Bookmark, null, tint = momentInk, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.size(4.dp))
                             Text(
-                                "Метка · " + whenText(note.createdAt),
+                                stringResource(R.string.moment_label, whenText(res, note.createdAt)),
                                 style = MaterialTheme.typography.labelLarge,
                                 color = momentInk,
                                 fontWeight = FontWeight.SemiBold,
@@ -243,36 +246,36 @@ private fun NoteCard(
                     }
                     if (!note.moment) {
                         Spacer(Modifier.height(4.dp))
-                        Text(whenText(note.createdAt), style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                        Text(whenText(res, note.createdAt), style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
                     }
                 }
                 if (note.pinned) {
-                    Icon(Icons.Rounded.PushPin, "Закреплена", tint = scheme.primary, modifier = Modifier.padding(top = 12.dp).size(18.dp))
+                    Icon(Icons.Rounded.PushPin, stringResource(R.string.pinned), tint = scheme.primary, modifier = Modifier.padding(top = 12.dp).size(18.dp))
                 }
                 Box {
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "Ещё") }
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.more)) }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(
-                            text = { Text(if (note.pinned) "Открепить" else "Закрепить") },
+                            text = { Text(stringResource(if (note.pinned) R.string.unpin else R.string.pin)) },
                             leadingIcon = { Icon(Icons.Rounded.PushPin, null) },
                             onClick = { menu = false; onTogglePin() },
                         )
                         DropdownMenuItem(
-                            text = { Text("Поделиться") },
+                            text = { Text(stringResource(R.string.share)) },
                             leadingIcon = { Icon(Icons.Rounded.Share, null) },
                             onClick = {
                                 menu = false
                                 val text = buildString {
-                                    if (note.moment) append("Метка ").append(whenText(note.createdAt)).append('\n')
+                                    if (note.moment) append(res.getString(R.string.share_moment, whenText(res, note.createdAt))).append('\n')
                                     append(note.text)
-                                    link?.summary?.let { append("\n\nРазговор ").append(link.started).append(": ").append(it) }
+                                    link?.summary?.let { append("\n\n").append(res.getString(R.string.share_conversation, link.started, it)) }
                                 }.trim()
                                 val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
-                                ctx.startActivity(Intent.createChooser(send, "Поделиться заметкой"))
+                                ctx.startActivity(Intent.createChooser(send, res.getString(R.string.share_title)))
                             },
                         )
                         DropdownMenuItem(
-                            text = { Text("Удалить") },
+                            text = { Text(stringResource(R.string.delete)) },
                             leadingIcon = { Icon(Icons.Rounded.Delete, null) },
                             onClick = { menu = false; onDelete() },
                         )
@@ -297,11 +300,11 @@ private fun NoteCard(
                         Spacer(Modifier.size(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(
-                                "Разговор ${link.started}–${link.ended} · ${link.duration}",
+                                stringResource(R.string.link_conversation, link.started, link.ended, link.duration),
                                 style = MaterialTheme.typography.labelLarge,
                             )
                             Text(
-                                link.summary ?: statusLabel(link.status),
+                                link.summary ?: statusLabel(res, link.status),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = scheme.onSurfaceVariant,
                                 maxLines = 2,
@@ -318,20 +321,29 @@ private fun NoteCard(
 @Composable
 private fun EditDialog(note: Note, onDismiss: () -> Unit, onSave: (String) -> Unit) {
     var text by remember { mutableStateOf(note.text) }
+    val res = LocalContext.current.resources
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (note.moment) "Метка · " + whenText(note.createdAt) else "Заметка") },
+        title = {
+            Text(
+                if (note.moment) {
+                    stringResource(R.string.moment_label, whenText(res, note.createdAt))
+                } else {
+                    stringResource(R.string.note_title)
+                },
+            )
+        },
         text = {
             OutlinedTextField(
                 value = text,
                 onValueChange = { text = it },
-                placeholder = { Text("Что было важно в этот момент?") },
+                placeholder = { Text(stringResource(R.string.note_placeholder)) },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 3,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
             )
         },
-        confirmButton = { TextButton(onClick = { onSave(text) }) { Text("Сохранить") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+        confirmButton = { TextButton(onClick = { onSave(text) }) { Text(stringResource(R.string.save)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }

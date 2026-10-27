@@ -82,7 +82,7 @@ class STTRouter:
         samples: np.ndarray,
         sample_rate: int,
         *,
-        language: str = "ru",
+        language: str | None = "ru",
         allow_cloud: bool = False,
     ) -> TranscriptionResult:
         """Расшифровывает отрезок.

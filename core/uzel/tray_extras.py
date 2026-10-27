@@ -21,6 +21,9 @@ import threading
 import time
 from pathlib import Path
 
+from . import i18n
+from .i18n import t
+
 log = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -68,28 +71,32 @@ def _ago(seconds: float | None) -> str:
     if seconds is None:
         return ""
     if seconds < 90:
-        return "только что"
+        return t("tray.ago.just_now")
     minutes = int(seconds // 60)
     if minutes < 60:
-        return f"{minutes} мин назад"
-    return f"{minutes // 60} ч {minutes % 60} мин назад"
+        return t("tray.ago.minutes", m=minutes)
+    return t("tray.ago.hours", h=minutes // 60, m=minutes % 60)
 
 
 def device_line(status: dict) -> str:
     """Строка состояния кулона для меню и подсказки трея."""
     device = device_info(status)
     if not device.get("known"):
-        return "Кулон: нет данных"
+        return t("tray.device.no_data")
     battery = device.get("battery_percent")
-    via = "ПК" if device.get("uid") == BRIDGE_UID else "телефон"
+    via = (
+        t("tray.device.via_pc")
+        if device.get("uid") == BRIDGE_UID
+        else t("tray.device.via_phone")
+    )
     if pendant_online(status):
-        charge = f" · {battery} %" if battery is not None else ""
-        return f"Кулон: на связи{charge} · через {via}"
+        charge = t("tray.device.charge", n=battery) if battery is not None else ""
+        return t("tray.device.online", charge=charge, via=via)
     # Заряд из последнего отчёта — помечаем, что он не текущий.
-    charge = f" · был {battery} %" if battery is not None else ""
+    charge = t("tray.device.charge_was", n=battery) if battery is not None else ""
     if device.get("stale"):
-        return f"Кулон: мост молчит ({_ago(device.get('ago_s'))}){charge}"
-    return f"Кулон: не в эфире{charge}"
+        return t("tray.device.silent", ago=_ago(device.get("ago_s")), charge=charge)
+    return t("tray.device.offline", charge=charge)
 
 
 # --------------------------------------------------------------------- заряд
@@ -114,7 +121,7 @@ class BatteryAlerts:
         if not crossed:
             return None
         self._fired.update(crossed)
-        return f"Заряд кулона {percent} % — пора на зарядку"
+        return t("tray.battery.low", n=percent)
 
 
 class ReconnectNotice:
@@ -129,8 +136,8 @@ class ReconnectNotice:
         was, self._online = self._online, online
         if online and was is False:
             battery = device_info(status).get("battery_percent")
-            charge = f" · {battery} %" if battery is not None else ""
-            return f"Кулон подключён{charge}"
+            charge = t("tray.device.charge", n=battery) if battery is not None else ""
+            return t("tray.reconnected", charge=charge)
         return None
 
 
@@ -150,27 +157,37 @@ def bridge_hung(
 
 # --------------------------------------------------------------- расшифровка
 
-_KEY_LINES = (
-    "расшифровано реплик",
-    "собрано разговоров",
-    "задач выгружено",
-    "ошибок расшифровки",
-)
+# Поля итога батча (подписи — cli.batch.<поле>), которые идут в уведомление.
+_KEY_STATS = ("transcribed", "conversations", "exported_tasks", "failed")
+
+
+def _batch_labels() -> dict[str, str]:
+    """Подпись строки итога на любом языке каталогов → поле.
+
+    Дочерний батч печатает итог на своём языке, а трей мог успеть сменить
+    язык — узнаём подписи всех языков.
+    """
+    labels: dict[str, str] = {}
+    for lang in i18n.available_languages():
+        for stat in _KEY_STATS:
+            labels[t(f"cli.batch.{stat}", lang=lang)] = stat
+    return labels
 
 
 def batch_summary(output: str) -> str:
     """Короткий итог батча для уведомления из строк «ключ: число»."""
+    labels = _batch_labels()
     found: dict[str, int] = {}
     for line in output.splitlines():
         match = re.match(r"\s*([^:]+):\s*(\d+)\s*$", line)
-        if match and match.group(1).strip() in _KEY_LINES:
-            found[match.group(1).strip()] = int(match.group(2))
+        if match and match.group(1).strip() in labels:
+            found[labels[match.group(1).strip()]] = int(match.group(2))
     if not found:
-        return "Расшифровка закончилась, итога в выводе нет — см. batch.log"
-    parts = [f"{key} {found[key]}" for key in _KEY_LINES if key in found]
-    if found.get("ошибок расшифровки") == 0:
-        parts = [p for p in parts if not p.startswith("ошибок")]
-    return "Расшифровка готова: " + ", ".join(parts)
+        return t("tray.batch.no_summary")
+    if found.get("failed") == 0:
+        del found["failed"]
+    parts = [f"{t(f'cli.batch.{stat}')} {found[stat]}" for stat in _KEY_STATS if stat in found]
+    return t("tray.batch.done", parts=", ".join(parts))
 
 
 # ------------------------------------------------------------------ процессы
@@ -342,7 +359,7 @@ class BatchRun:
             pass
         summary = batch_summary(joined)
         if failed:
-            summary = "Расшифровка с ошибкой — см. batch.log. " + summary
+            summary = t("tray.batch.failed") + summary
         on_done(summary)
 
 

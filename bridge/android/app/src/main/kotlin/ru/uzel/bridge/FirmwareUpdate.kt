@@ -24,25 +24,27 @@ class DfuService : DfuBaseService() {
  */
 class FirmwareUpdate(private val context: Context, private val onState: (String) -> Unit) {
 
+    private fun say(id: Int, vararg args: Any) = onState(context.getString(id, *args))
+
     private val listener = object : DfuProgressListenerAdapter() {
-        override fun onDeviceConnecting(deviceAddress: String) = onState("подключаюсь к кулону…")
-        override fun onEnablingDfuMode(deviceAddress: String) = onState("кулон уходит в загрузчик…")
-        override fun onDfuProcessStarting(deviceAddress: String) = onState("загрузчик готов, начинаю заливку…")
+        override fun onDeviceConnecting(deviceAddress: String) = say(R.string.fw_connecting)
+        override fun onEnablingDfuMode(deviceAddress: String) = say(R.string.fw_dfu_mode)
+        override fun onDfuProcessStarting(deviceAddress: String) = say(R.string.fw_starting)
         override fun onProgressChanged(
             deviceAddress: String, percent: Int, speed: Float, avgSpeed: Float,
             currentPart: Int, partsTotal: Int,
-        ) = onState("заливка: $percent %")
-        override fun onFirmwareValidating(deviceAddress: String) = onState("кулон проверяет образ…")
+        ) = say(R.string.fw_progress, percent)
+        override fun onFirmwareValidating(deviceAddress: String) = say(R.string.fw_validating)
         override fun onDfuCompleted(deviceAddress: String) {
-            onState("готово: кулон перезапущен с новой прошивкой")
+            say(R.string.fw_done)
             finish()
         }
         override fun onDfuAborted(deviceAddress: String) {
-            onState("обновление прервано")
+            say(R.string.fw_aborted)
             finish()
         }
         override fun onError(deviceAddress: String, error: Int, errorType: Int, message: String?) {
-            onState("ошибка $error: ${message ?: "без описания"}. Если кулон не вернулся — выключите и включите его")
+            say(R.string.fw_error, error, message ?: context.getString(R.string.fw_no_description))
             finish()
         }
     }
@@ -69,6 +71,6 @@ class FirmwareUpdate(private val context: Context, private val onState: (String)
             .disableMtuRequest()
             .setZip(zip)
             .start(context, DfuService::class.java)
-        onState("запуск обновления…")
+        say(R.string.fw_launching)
     }
 }

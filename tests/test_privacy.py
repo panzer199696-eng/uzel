@@ -269,3 +269,30 @@ def test_gate_does_not_shorten_mute_set_elsewhere(tmp_path):
     трей.mute(5, now=now)
 
     assert трей.state(now).muted_until == pytest.approx(now + 3600)
+
+
+# --- языки (27.10.2026) ---
+
+
+def test_schedule_accepts_weekdays_of_any_language():
+    from uzel.privacy import parse_window
+
+    assert parse_window("10:00-12:00/mon,Tue").weekdays == frozenset({0, 1})
+    assert parse_window("10:00-12:00/пн,sun").weekdays == frozenset({0, 6})
+
+
+def test_describe_and_reasons_follow_interface_language(tmp_path):
+    from uzel import i18n
+    from uzel.privacy import PrivacyGate, parse_window
+
+    i18n.set_language("en")
+    assert QuietWindow(dtime(10, 0), dtime(12, 0)).describe() == "10:00–12:00 daily"
+    assert parse_window("10:00-12:00/mon,wed").describe() == "10:00–12:00 mon,wed"
+    gate = PrivacyGate(tmp_path / "privacy.json")
+    assert gate.state().as_dict()["причина"] == "allowed"
+    gate.pause()
+    assert gate.state().as_dict() == {
+        "запись": "off", "причина": "stopped manually", "код": "paused", "до": None,
+    }
+    i18n.set_language("ru")
+    assert parse_window("10:00-12:00/mon,wed").describe() == "10:00–12:00 пнср"

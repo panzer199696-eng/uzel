@@ -1,16 +1,17 @@
-УЗЕЛ (UZEL)
-Лицензия проекта — MIT, см. файл LICENSE.
+UZEL (УЗЕЛ)
+The project is licensed under MIT, see the LICENSE file.
 
-В репозитории есть сторонние компоненты. Они распространяются на условиях
-своих лицензий, перечисленных ниже. Тексты лицензий лежат рядом с компонентами
-или в их исходниках.
+The repository contains third-party components. They are distributed under
+their own licenses, listed below. The license texts are kept next to the
+components or in their sources.
 
 -------------------------------------------------------------------------------
-1. Прошивка Omi (firmware/)
+1. Omi firmware (firmware/)
 -------------------------------------------------------------------------------
-Прошивка УЗЛА выросла из прошивки Omi DK2 2.0.10, сборка omi_2.0.10_triangle.
-Исходник: https://github.com/BasedHardware/omi
-Лицензия: MIT
+The UZEL firmware grew out of the Omi DK2 2.0.10 firmware, build
+omi_2.0.10_triangle.
+Source: https://github.com/BasedHardware/omi
+License: MIT
 
   Copyright (c) 2024 Based Hardware Contributors
 
@@ -35,40 +36,40 @@
 -------------------------------------------------------------------------------
 2. Opus 1.2.1 (firmware/src/lib/opus-1.2.1/)
 -------------------------------------------------------------------------------
-Кодек Opus, подмножество исходников версии 1.2.1.
-Исходник: https://opus-codec.org/
-Лицензия: BSD 3-Clause (Xiph.Org Foundation, Skype Limited, CSIRO и др.)
-Текст: firmware/src/lib/opus-1.2.1/COPYING
+The Opus codec, a subset of the 1.2.1 sources.
+Source: https://opus-codec.org/
+License: BSD 3-Clause (Xiph.Org Foundation, Skype Limited, CSIRO and others)
+Text: firmware/src/lib/opus-1.2.1/COPYING
 
 -------------------------------------------------------------------------------
-3. Драйвер батареи (firmware/src/lib/battery/)
+3. Battery driver (firmware/src/lib/battery/)
 -------------------------------------------------------------------------------
   Copyright 2024 Marcus Alexander Tjomsaas
-Лицензия: Apache License 2.0 — https://www.apache.org/licenses/LICENSE-2.0
-Изменения УЗЛА: множитель делителя напряжения записан явно (×3).
+License: Apache License 2.0 — https://www.apache.org/licenses/LICENSE-2.0
+UZEL changes: the voltage divider multiplier is written out explicitly (x3).
 
 -------------------------------------------------------------------------------
-4. Модель Silero VAD (core/uzel/models/silero_vad.onnx)
+4. Silero VAD model (core/uzel/models/silero_vad.onnx)
 -------------------------------------------------------------------------------
-Модель обнаружения речи Silero VAD v5.
-Исходник: https://github.com/snakers4/silero-vad
-Лицензия: MIT, Copyright (c) 2020-present Silero Team
+The Silero VAD v5 speech detection model.
+Source: https://github.com/snakers4/silero-vad
+License: MIT, Copyright (c) 2020-present Silero Team
 
 -------------------------------------------------------------------------------
-5. Корпус Omi Triangle v1 (hardware/case-v2/omi_triangle_v1/)
+5. Omi Triangle v1 case (hardware/case-v2/omi_triangle_v1/)
 -------------------------------------------------------------------------------
-Исходные модели корпуса (base, top_cover) из https://github.com/BasedHardware/omi.
-Лицензия: MIT, Copyright (c) 2024 Based Hardware Contributors
-Текст: hardware/case-v2/omi_triangle_v1/LICENSE
-Корпус УЗЛА v2 (hardware/case-v2/scripts/) — производная работа от этих моделей.
+The original case models (base, top_cover) from https://github.com/BasedHardware/omi.
+License: MIT, Copyright (c) 2024 Based Hardware Contributors
+Text: hardware/case-v2/omi_triangle_v1/LICENSE
+The UZEL v2 case (hardware/case-v2/scripts/) is a derivative work of these models.
 
 -------------------------------------------------------------------------------
-Скачиваются отдельно (в репозитории их нет)
+Downloaded separately (not in the repository)
 -------------------------------------------------------------------------------
-- Модели Whisper (OpenAI), в т.ч. в формате faster-whisper / CTranslate2 — MIT.
-- Модели Qwen2.5 (Alibaba Cloud) для Ollama — Apache License 2.0
-  (условия конкретной модели — в её карточке; qwen3 — тоже Apache License 2.0).
-- Модель эмбеддингов paraphrase-multilingual-MiniLM-L12-v2
+- Whisper models (OpenAI), including the faster-whisper / CTranslate2 format — MIT.
+- Qwen2.5 models (Alibaba Cloud) for Ollama — Apache License 2.0
+  (the terms of a specific model are in its model card; qwen3 is Apache License 2.0 too).
+- The paraphrase-multilingual-MiniLM-L12-v2 embedding model
   (sentence-transformers) — Apache License 2.0.
-- Python-зависимости (requirements.txt) и Android-зависимости (Gradle) —
-  на условиях их собственных лицензий.
+- Python dependencies (requirements.txt) and Android dependencies (Gradle) —
+  under their own licenses.

@@ -13,10 +13,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
-from . import __version__
+from . import __version__, i18n
 from .audio import PCM_ENCODING
 from .config import Settings, get_settings
 from .device import DeviceReport, DeviceStatus
+from .i18n import t
 from .logging_setup import setup_logging
 from .opus_stream import OPUS_FRAMES_ENCODING, count_frames
 from .privacy import PrivacyGate, build_gate
@@ -41,6 +42,8 @@ class DeviceReportIn(BaseModel):
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     setup_logging(settings.log_level)
+    # Язык ответов для человека: выбор из окна сильнее UZEL_LANG (i18n.py).
+    i18n.configure(settings)
 
     # P11, находка 1: не петлевой адрес без токена — не поднимаемся вовсе.
     # Тихо открытая наружу память хуже, чем ядро, которое не завелось.
@@ -132,7 +135,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ):
         payload = await request.body()
         if not payload:
-            raise HTTPException(status_code=400, detail="пустое тело запроса")
+            raise HTTPException(status_code=400, detail=t("api.err.empty_body"))
         if sample_rate != settings.sample_rate:
             raise HTTPException(
                 status_code=400,
@@ -183,7 +186,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Приём кадров Opus от Android-клиента (P8): декодирует воркер, не приёмник."""
         payload = await request.body()
         if not payload:
-            raise HTTPException(status_code=400, detail="пустое тело запроса")
+            raise HTTPException(status_code=400, detail=t("api.err.empty_body"))
 
         # FR-070, FR-071: заглушённый звук отбрасывается ДО записи на диск —
         # по времени захвата, как и в /ingest (P11, находка 2).

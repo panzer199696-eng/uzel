@@ -42,7 +42,7 @@ class GroqBackend(STTBackend):
         return bool(self._api_key)
 
     def transcribe(
-        self, samples: np.ndarray, sample_rate: int, language: str
+        self, samples: np.ndarray, sample_rate: int, language: str | None
     ) -> TranscriptionResult:
         import httpx
 
@@ -60,7 +60,8 @@ class GroqBackend(STTBackend):
                 files={"file": ("audio.wav", payload, "audio/wav")},
                 data={
                     "model": self._model,
-                    "language": language,
+                    # None — язык определяет сервис (UZEL_STT_LANGUAGE=auto)
+                    **({"language": language} if language else {}),
                     "response_format": "verbose_json",
                     "temperature": "0",
                 },
@@ -77,9 +78,25 @@ class GroqBackend(STTBackend):
         body = response.json()
         return TranscriptionResult(
             text=(body.get("text") or "").strip(),
-            language=body.get("language") or language,
+            language=_language_code(body.get("language")) or language or "",
             backend=self.name,
             audio_seconds=audio_seconds,
             latency_s=time.monotonic() - started,
             raw=body,
         )
+
+
+# verbose_json отдаёт язык словом («russian»), а база хранит код whisper.
+_LANGUAGE_NAMES = {
+    "russian": "ru", "english": "en", "ukrainian": "uk", "belarusian": "be",
+    "kazakh": "kk", "german": "de", "french": "fr", "spanish": "es",
+    "italian": "it", "portuguese": "pt", "polish": "pl", "turkish": "tr",
+    "chinese": "zh", "japanese": "ja", "korean": "ko",
+}
+
+
+def _language_code(value: str | None) -> str | None:
+    if not value:
+        return None
+    text = value.strip().lower()
+    return _LANGUAGE_NAMES.get(text, text if len(text) <= 3 else None)

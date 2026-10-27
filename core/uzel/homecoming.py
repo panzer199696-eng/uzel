@@ -21,6 +21,7 @@ from pathlib import Path
 
 from .audio import read_wav
 from .config import Settings
+from .stt.language import whisper_language
 from .stt.router import build_router
 from .vad import SileroVAD, detect_speech
 
@@ -107,7 +108,7 @@ def transcribe_for_wer(
         result = router.transcribe(
             piece,
             sample_rate,
-            language=settings.stt_language,
+            language=whisper_language(settings.stt_language),
             allow_cloud=allow_cloud,
         )
         texts.append(result.text)

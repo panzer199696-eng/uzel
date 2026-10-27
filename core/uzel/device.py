@@ -10,6 +10,8 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 
+from .i18n import t
+
 # Мост отчитывается раз в 30 с. Втрое больше — значит связь оборвалась,
 # а не «отчёт чуть задержался».
 STALE_AFTER_S = 90.0
@@ -62,13 +64,13 @@ class DeviceStatus:
 
     def as_dict(self, *, now: float | None = None) -> dict:
         if self._last is None:
-            return {"known": False, "reason": "мост не выходил на связь"}
+            return {"known": False, "reason": t("device.reason.never")}
         data = self._last.as_dict(now=now)
         data["known"] = True
         if data["stale"]:
-            data["reason"] = "мост молчит"
+            data["reason"] = t("device.reason.silent")
         elif not data["connected"]:
-            data["reason"] = "мост на связи, кулон отключён"
+            data["reason"] = t("device.reason.pendant_off")
         else:
-            data["reason"] = "кулон на связи"
+            data["reason"] = t("device.reason.online")
         return data

@@ -27,14 +27,25 @@ class Element {
   remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); }
 }
 
-const elements = new Map();
-const context = vm.createContext({
-  document: { getElementById(id) { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); }, createElement: tag => new Element(tag), addEventListener() {} },
-  Date, Math, Number, String, Object, Array, Set, Map, encodeURIComponent, setInterval() {},
-  fetch: async () => { throw new Error("No live requests in tests"); },
-});
 const staticDirectory = process.argv[2] ? path.resolve(process.argv[2]) : path.join(__dirname, "static");
-vm.runInContext(fs.readFileSync(path.join(staticDirectory, "app.js"), "utf8"), context);
+const localesDirectory = path.join(staticDirectory, "..", "..", "locales");
+// Словарь страницы, как его кладёт сервер в window.UZEL_I18N: ключи ui.* языка.
+function uiCatalog(lang) {
+  const all = JSON.parse(fs.readFileSync(path.join(localesDirectory, `${lang}.json`), "utf8"));
+  return { lang, strings: Object.fromEntries(Object.entries(all).filter(([key]) => key.startsWith("ui."))) };
+}
+function makeContext(lang, store) {
+  const ctx = vm.createContext({
+    document: { getElementById(id) { if (!store.has(id)) store.set(id, new Element()); return store.get(id); }, createElement: tag => new Element(tag), addEventListener() {} },
+    Date, Math, Number, String, Object, Array, Set, Map, encodeURIComponent, setInterval() {},
+    fetch: async () => { throw new Error("No live requests in tests"); },
+    UZEL_I18N: uiCatalog(lang),
+  });
+  vm.runInContext(fs.readFileSync(path.join(staticDirectory, "app.js"), "utf8"), ctx);
+  return ctx;
+}
+const elements = new Map();
+const context = makeContext("ru", elements);
 const run = source => vm.runInContext(source, context);
 const el = id => elements.get(id);
 const base = { version: "test", privacy: { код: "allowed" }, queue: { pending: 2, processing: 1 }, device: { known: true, connected: true, stale: false, packets: 3, battery_percent: 76 }, db: {}, quiet_windows: [] };
@@ -216,10 +227,56 @@ test("HTML имеет все DOM точки, закрытую диагности
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
   assert.equal(new Set(ids).size, ids.length);
   for (const match of source.matchAll(/getElementById\("([^"]+)"\)/g)) assert.ok(ids.includes(match[1]), `Missing DOM id ${match[1]}`);
-  assert.match(html, /<details class="diagnostics panel">/); assert.equal((html.match(/ui=20261013-1/g) || []).length, 2);
+  assert.match(html, /<details class="diagnostics panel">/); assert.equal((html.match(/ui=20261027-1/g) || []).length, 2);
   assert.doesNotMatch(html + css + source, /https?:\/\//);
   assert.equal((css.match(/{/g) || []).length, (css.match(/}/g) || []).length);
   assert.match(css, /prefers-reduced-motion/); assert.match(css, /focus-visible/);
+});
+
+test("строки страницы и app.js — только из каталога, ключи есть в en и ru", () => {
+  const html = fs.readFileSync(path.join(staticDirectory, "index.html"), "utf8");
+  const source = fs.readFileSync(path.join(staticDirectory, "app.js"), "utf8");
+  const cyr = /[а-яё]/i;
+  // Служебные метки подстановки ({ВЕРСИЯ} и др.) — не текст для человека.
+  assert.doesNotMatch(html.replace(/\{[А-ЯЁ]+\}/g, ""), cyr);
+  const code = source.split("\n").filter(line => !line.trim().startsWith("//")).join("\n").replace(/\.(код|до|причина)(?![а-яё])/gi, "");
+  assert.doesNotMatch(code, cyr);
+  const keys = [...html.matchAll(/\{\{t:([\w.]+)\}\}/g)].map(m => m[1]).concat([...source.matchAll(/\bt\("(ui\.[\w.]+)"/g)].map(m => m[1]), [...source.matchAll(/\btn\("(ui\.[\w.]+)"/g)].map(m => m[1]));
+  assert.ok(keys.length > 50);
+  for (const lang of ["en", "ru"]) {
+    const strings = uiCatalog(lang).strings;
+    for (const key of keys) assert.ok(key in strings, `${lang}: нет ключа ${key}`);
+  }
+});
+test("английский интерфейс: статус, формы числа, задачи", async () => {
+  const store = new Map();
+  const en = makeContext("en", store);
+  en.statusFixture = base; vm.runInContext("renderStatus(statusFixture)", en);
+  assert.match(store.get("recording").textContent, /The pendant is sending audio/);
+  assert.match(store.get("queue").innerHTML, /2 chunks waiting/);
+  assert.match(store.get("permission").textContent, /Recording allowed/);
+  vm.runInContext("renderStatus(null)", en);
+  assert.match(store.get("recording").textContent, /The app is not responding/);
+  en.fetch = async () => response({ conversations: [], tasks: [], totals: {} }); await vm.runInContext("loadDay()", en);
+  assert.match(store.get("day-feed").textContent, /No conversations yet/);
+  assert.match(store.get("day-summary").innerHTML, /<strong>0<\/strong> conversations/);
+  assert.equal(vm.runInContext("tn('ui.n.facts', 1)", en), "1 fact");
+});
+test("русские формы числа: 1, 2, 5, 21", () => {
+  assert.equal(run("tn('ui.n.facts', 1)"), "1 факт");
+  assert.equal(run("tn('ui.n.facts', 2)"), "2 факта");
+  assert.equal(run("tn('ui.n.facts', 5)"), "5 фактов");
+  assert.equal(run("tn('ui.n.facts', 21)"), "21 факт");
+  render(); assert.match(el("queue").innerHTML, /2 фрагмента ждут/);
+});
+test("нет словаря — видны ключи, а не падение", () => {
+  const store = new Map();
+  const bare = vm.createContext({
+    document: { getElementById(id) { if (!store.has(id)) store.set(id, new Element()); return store.get(id); }, createElement: tag => new Element(tag), addEventListener() {} },
+    Date, Math, Number, String, Object, Array, Set, Map, encodeURIComponent, setInterval() {},
+  });
+  vm.runInContext(fs.readFileSync(path.join(staticDirectory, "app.js"), "utf8"), bare);
+  assert.equal(vm.runInContext("t('ui.no_data')", bare), "ui.no_data");
 });
 
 (async () => {

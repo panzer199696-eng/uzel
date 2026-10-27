@@ -217,8 +217,9 @@ class LocalWhisperBackend(STTBackend):
         return self._model
 
     def transcribe(
-        self, samples: np.ndarray, sample_rate: int, language: str
+        self, samples: np.ndarray, sample_rate: int, language: str | None
     ) -> TranscriptionResult:
+        """``language=None`` — язык определяет whisper (UZEL_STT_LANGUAGE=auto)."""
         if sample_rate != 16000:
             raise TranscriptionError(
                 f"faster-whisper ждёт 16 кГц, получено {sample_rate}"
@@ -249,7 +250,7 @@ class LocalWhisperBackend(STTBackend):
 
         return TranscriptionResult(
             text=text,
-            language=getattr(info, "language", language) or language,
+            language=getattr(info, "language", None) or language or "",
             backend=self.name,
             audio_seconds=audio_seconds,
             latency_s=time.monotonic() - started,
@@ -258,6 +259,9 @@ class LocalWhisperBackend(STTBackend):
                 "device": self.device,
                 "compute_type": self._compute_type,
                 "beam_size": self._beam_size,
+                # Уверенность определения языка: по ней воркер решает, можно ли
+                # одолжить этот язык коротким репликам (stt/language.py).
+                "language_probability": getattr(info, "language_probability", None),
                 **metrics,
             },
         )

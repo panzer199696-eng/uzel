@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     data_dir: Path = Path.home() / "uzel-data"
     sample_rate: int = 16000
     log_level: str = "INFO"
+    # Язык интерфейса и вывода: окно, трей, CLI, сводки, факты, задачи, заметки.
+    # auto — язык системы, если для него есть каталог в uzel/locales, иначе en.
+    # Выбор в окне (файл language.txt в data_dir) сильнее этой настройки.
+    lang: str = "auto"
 
     # NFR-005: наружу не слушаем
     host: str = "127.0.0.1"
@@ -70,7 +74,11 @@ class Settings(BaseSettings):
     # Порядок = приоритет. FR-021: локальный бэкенд первым. Groq подключается
     # только явной настройкой: облако — не молчаливый запасной путь.
     stt_backends: tuple[str, ...] = ("local",)
-    stt_language: str = "ru"
+    # Язык распознавания: auto — whisper определяет сам, либо код whisper (ru, en…).
+    # В режиме auto короткие реплики берут язык уверенно распознанных длинных
+    # из того же прогона (stt/language.py): на 1–3 с whisper путает языки.
+    # До 27.10.2026 умолчание было "ru"; прежнее поведение — UZEL_STT_LANGUAGE=ru.
+    stt_language: str = "auto"
 
     groq_api_key: str | None = None
     groq_model: str = "whisper-large-v3"
@@ -118,7 +126,9 @@ class Settings(BaseSettings):
     nlu_max_chars: int = 6000
     # Кто носит микрофон — подставляется в промпт разбора («Владелец микрофона: …»).
     # Именительный падеж: «инженер ПТО», «врач», «менеджер по продажам».
-    user_role: str = "пользователь"
+    # Пусто — слово из каталога языка («пользователь» / «user»). Пишется на любом
+    # языке: модель понимает роль, даже если промпт на другом.
+    user_role: str | None = None
 
     # OpenAI-совместимый агент-шлюз на локальном порту (см. llm.GatewayBackend).
     # Считается облаком: локален только порт.
@@ -139,13 +149,15 @@ class Settings(BaseSettings):
     report_dir: Path | None = None
     # Новая структура выгрузки (ТЗ 2026-08-24, пункт 4.2): заметки дней и,
     # отдельно под TTL, дословные расшифровки — только по явному флагу.
-    vault_days_subdir: str = r"Проекты\Узел\Дни"
-    vault_raw_subdir: str = r"Проекты\Узел\_Сырое"
+    # Пусто — путь из каталога языка: ru «Проекты\Узел\Дни», en «Projects\Uzel\Days».
+    vault_days_subdir: str | None = None
+    vault_raw_subdir: str | None = None
     export_transcript: bool = False  # дословная расшифровка в vault — только по флагу
     raw_note_ttl_days: int = 30
     # НЕ корневой «Задачи — незавершённые.md»: конвейер не имеет права писать
     # в файл задач владельца (пункт 4.3 ТЗ), у УЗЕЛ свой входящий список.
-    tasks_note: str = r"Проекты\Узел\Входящее — задачи.md"
+    # Пусто — из каталога языка: ru «Проекты\Узел\Входящее — задачи.md».
+    tasks_note: str | None = None
     telegram_token: str | None = None
     telegram_chat_id: str | None = None
 
@@ -214,20 +226,29 @@ class Settings(BaseSettings):
 
     @property
     def vault_days_dir(self) -> Path:
-        return self.vault_dir / self.vault_days_subdir
+        return self.vault_dir / _localized(self.vault_days_subdir, "export.vault.days_subdir")
 
     @property
     def vault_raw_dir(self) -> Path:
-        return self.vault_dir / self.vault_raw_subdir
+        return self.vault_dir / _localized(self.vault_raw_subdir, "export.vault.raw_subdir")
 
     @property
     def tasks_note_path(self) -> Path:
-        return self.vault_dir / self.tasks_note
+        return self.vault_dir / _localized(self.tasks_note, "export.vault.tasks_note")
 
     @property
     def worker_stop_file(self) -> Path:
         """Стоп-файл ночного батча: появился — доработали такт и вышли."""
         return self.data_dir / "worker.stop"
+
+
+def _localized(value: str | None, key: str) -> str:
+    """Настройка, а если она пуста — умолчание из каталога текущего языка."""
+    if value:
+        return value
+    from .i18n import t
+
+    return t(key)
 
 
 @lru_cache

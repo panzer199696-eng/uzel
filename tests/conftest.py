@@ -12,11 +12,12 @@ os.environ["UZEL_ENV_FILE"] = os.path.join(
 
 import numpy as np
 import pytest
+from uzel import i18n
 from uzel.config import Settings
 
 
 @pytest.fixture(autouse=True)
-def без_переменных_окружения(monkeypatch) -> None:
+def без_переменных_окружения(monkeypatch):
     """Убирает UZEL_* из окружения на время теста.
 
     Переменная окружения сильнее и .env, и умолчаний. 20.09.2026 унаследованная
@@ -26,6 +27,13 @@ def без_переменных_окружения(monkeypatch) -> None:
     """
     for имя in [k for k in os.environ if k.startswith("UZEL_")]:
         monkeypatch.delenv(имя, raising=False)
+    # Язык по умолчанию — auto, то есть язык системы. Тесты не должны от него
+    # зависеть: старые проверки написаны на русский вывод, английский
+    # проверяется явно (UZEL_LANG=en или i18n.set_language("en")).
+    monkeypatch.setenv("UZEL_LANG", "ru")
+    i18n.set_language("ru")
+    yield
+    i18n.reset()
 
 
 @pytest.fixture

@@ -1,5 +1,7 @@
 # Прошивка УЗЛА
 
+*English → [README.en.md](README.en.md)*
+
 Кулон: Seeed XIAO nRF52840 **Sense** (корпус Triangle v1), загрузчик Adafruit nRF52
 Bootloader (UF2) с SoftDevice S140 7.3.0 во флеше (нужен загрузчику для обновления
 по воздуху). Zephyr / nRF Connect SDK v2.7.0, приложение с адреса `0x27000`.

@@ -24,6 +24,8 @@ uzel app [--host] [--port] [--no-window] [--no-tray] [--autoclose N]
                                   окно и трей на ПК
 uzel autostart install|remove|status
                                   запуск вместе с системой
+
+Справка, ошибки и итоги команд — на языке интерфейса (UZEL_LANG, i18n.py).
 """
 
 from __future__ import annotations
@@ -32,17 +34,21 @@ import argparse
 import sys
 from datetime import date, datetime, timedelta
 
+from . import i18n
 from .config import PROJECT_ROOT, Settings, get_settings
+from .i18n import t
 from .logging_setup import setup_logging
 from .storage import Storage
 
 
 def _fmt_time(timestamp: float) -> str:
-    return datetime.fromtimestamp(timestamp).strftime("%d.%m.%Y %H:%M")
+    return datetime.fromtimestamp(timestamp).strftime(t("format.datetime"))
 
 
 def _fmt_duration(seconds: float) -> str:
-    return f"{seconds / 60:.0f} мин" if seconds >= 60 else f"{seconds:.0f} с"
+    if seconds >= 60:
+        return t("unit.minutes", value=f"{seconds / 60:.0f}")
+    return t("unit.seconds", value=f"{seconds:.0f}")
 
 
 def cmd_search(args, settings: Settings) -> int:
@@ -68,19 +74,17 @@ def cmd_search(args, settings: Settings) -> int:
 
         if not rows:
             if not args.plain:
-                print(
-                    "Смысловой поиск ничего не дал, ищу по подстроке.", file=sys.stderr
-                )
+                print(t("cli.search.semantic_empty"), file=sys.stderr)
             rows = [
                 (None, row) for row in storage.search_text(args.query, limit=args.limit)
             ]
 
         if not rows:
-            print("Ничего не нашлось.")
+            print(t("cli.nothing_found"))
             return 1
 
         if hidden:
-            print(f"скрыто приватных: {hidden}", file=sys.stderr)
+            print(t("cli.hidden_private", n=hidden), file=sys.stderr)
 
         for score, row in rows:
             people = _speaker_name(storage, row.id)
@@ -98,44 +102,37 @@ def _speaker_name(storage: Storage, utterance_id: int) -> str:
                LEFT JOIN people p ON p.id = u.speaker_id WHERE u.id=?""",
             (utterance_id,),
         ).fetchone()
-    return row["name"] if row and row["name"] else "говорящий не размечен"
+    return row["name"] if row and row["name"] else t("cli.speaker_unknown")
 
 
 def cmd_stats(args, settings: Settings) -> int:
     with Storage(settings.db_path) as storage:
         stats = storage.stats()
-        print(f"База: {settings.db_path}")
-        for key, title in (
-            ("conversations", "разговоров"),
-            ("utterances", "реплик"),
-            ("facts", "фактов"),
-            ("tasks", "задач"),
-            ("people", "людей"),
-            ("tags", "меток"),
-        ):
-            print(f"  {title:12s} {stats[key]}")
+        print(t("cli.stats.db", path=settings.db_path))
+        for key in ("conversations", "utterances", "facts", "tasks", "people", "tags"):
+            print(f"  {t(f'cli.stats.{key}'):12s} {stats[key]}")
 
         pending = storage.pending_utterances(limit=10_000)
         if pending:
-            print(f"  ждут расшифровки: {len(pending)}")
+            print("  " + t("cli.stats.pending", n=len(pending)))
 
     from .queue import DiskQueue
 
     queue = DiskQueue(settings.queue_dir)
-    print(f"Очередь приёма: {queue.pending_count()} фрагментов")
+    print(t("cli.stats.queue", n=queue.pending_count()))
     return 0
 
 
 def cmd_quality_report(args, settings: Settings) -> int:
     """Сводка фильтра качества — материал для калибровки порогов."""
-    from .quality import REASON_TITLES
+    from .quality import reason_title
 
     start = end = None
     if args.day is not None:
         try:
             day = datetime.strptime(args.day, "%Y-%m-%d")
         except ValueError:
-            print(f"Не разобрать дату: {args.day}", file=sys.stderr)
+            print(t("cli.bad_date", value=args.day), file=sys.stderr)
             return 2
         start = day.timestamp()
         end = (day + timedelta(days=1)).timestamp()
@@ -144,7 +141,7 @@ def cmd_quality_report(args, settings: Settings) -> int:
         counts = storage.quality_counts(start=start, end=end)
         total = counts["total"]
         if total == 0:
-            print("За период реплик нет.")
+            print(t("cli.quality.no_utterances"))
         else:
             accepted = counts["accepted"]
             rejected = counts["rejected"]
@@ -153,24 +150,24 @@ def cmd_quality_report(args, settings: Settings) -> int:
             def share(part: int) -> str:
                 return f" ({round(part / total * 100)} %)" if part else ""
 
-            print(f"Качество: {settings.db_path}")
-            print(f"Период: {args.day if args.day else 'всё время'}")
-            print(f"  {'реплик всего':<18} {total}")
-            print(f"  {'принято':<18} {accepted}{share(accepted)}")
-            print(f"  {'отклонено':<18} {rejected}{share(rejected)}")
-            print(f"  {'помечено':<18} {flagged}{share(flagged)}")
+            print(t("cli.quality.title", path=settings.db_path))
+            print(t("cli.quality.period", period=args.day or t("cli.quality.all_time")))
+            print(f"  {t('cli.quality.total'):<18} {total}")
+            print(f"  {t('cli.quality.accepted'):<18} {accepted}{share(accepted)}")
+            print(f"  {t('cli.quality.rejected'):<18} {rejected}{share(rejected)}")
+            print(f"  {t('cli.quality.flagged'):<18} {flagged}{share(flagged)}")
 
             for reason, count in sorted(
                 counts["by_reason"].items(), key=lambda item: (-item[1], item[0])
             ):
-                print(f"    {REASON_TITLES.get(reason, reason):<28} {count}")
+                print(f"    {reason_title(reason):<28} {count}")
 
             if args.limit > 0:
                 examples = storage.rejected_utterances(
                     limit=args.limit, start=start, end=end
                 )
                 if examples:
-                    print(f"Примеры (последние {len(examples)}):")
+                    print(t("cli.quality.examples", n=len(examples)))
                     for row in examples:
                         text = (row.text or "").replace("\n", " ")
                         print(
@@ -179,11 +176,11 @@ def cmd_quality_report(args, settings: Settings) -> int:
                         )
 
     mode = (
-        "отбрасывание включено"
+        t("cli.quality.enforce_on")
         if settings.quality_enforce
-        else "пометка без отбрасывания"
+        else t("cli.quality.enforce_off")
     )
-    print(f"Режим: {mode} (quality_enforce={settings.quality_enforce})")
+    print(t("cli.quality.mode", mode=mode, enforce=settings.quality_enforce))
     return 0
 
 
@@ -203,7 +200,8 @@ def cmd_privacy(args, settings: Settings) -> int:
         if value is not None:
             print(f"{key}: {value}")
     if gate.windows:
-        print("стоп-зоны: " + "; ".join(window.describe() for window in gate.windows))
+        windows = "; ".join(window.describe() for window in gate.windows)
+        print(t("cli.privacy.windows", windows=windows))
     return 0
 
 
@@ -215,9 +213,7 @@ def cmd_purge(args, settings: Settings) -> int:
     from .queue import DiskQueue
 
     removed_chunks = DiskQueue(settings.queue_dir).purge_done(ttl)
-    print(
-        f"Удалено: записей аудио {removed_audio}, обработанных фрагментов {removed_chunks}"
-    )
+    print(t("cli.purge.done", audio=removed_audio, chunks=removed_chunks))
     return 0
 
 
@@ -229,7 +225,7 @@ def cmd_export(args, settings: Settings) -> int:
         try:
             day = datetime.strptime(args.day, "%Y-%m-%d").date()
         except ValueError:
-            print(f"Не разобрать дату: {args.day}", file=sys.stderr)
+            print(t("cli.bad_date", value=args.day), file=sys.stderr)
             return 2
     else:
         day = date.today()
@@ -238,12 +234,12 @@ def cmd_export(args, settings: Settings) -> int:
         result = worker.export_day(day, with_transcript=args.with_transcript)
 
     if result["note"] is None:
-        print(f"За {day.isoformat()} закрытых разговоров нет — заметка не писалась.")
+        print(t("cli.export.no_note", date=day.isoformat()))
     else:
-        print(f"Заметка дня: {result['note']}")
+        print(t("cli.export.note", path=result["note"]))
     if result["raw"] is not None:
-        print(f"Расшифровка: {result['raw']}")
-    print(f"Задач выгружено: {result['tasks']}")
+        print(t("cli.export.raw", path=result["raw"]))
+    print(t("cli.export.tasks", n=result["tasks"]))
     return 0
 
 
@@ -252,16 +248,27 @@ def cmd_show(args, settings: Settings) -> int:
     with Storage(settings.db_path) as storage:
         conversation = storage.get_conversation(args.id)
         if conversation is None:
-            print(f"Разговора {args.id} нет.", file=sys.stderr)
+            print(t("cli.show.missing", id=args.id), file=sys.stderr)
             return 1
 
         started = datetime.fromtimestamp(conversation["started_at"])
         ended = datetime.fromtimestamp(conversation["ended_at"])
         duration = conversation["ended_at"] - conversation["started_at"]
-        print(f"Разговор {conversation['id']} · {started:%d.%m.%Y}")
         print(
-            f"  {started:%H:%M}–{ended:%H:%M} ({_fmt_duration(duration)})"
-            f", статус: {conversation['status']}"
+            t(
+                "cli.show.header",
+                id=conversation["id"],
+                date=started.strftime(t("format.date")),
+            )
+        )
+        print(
+            t(
+                "cli.show.span",
+                start=f"{started:%H:%M}",
+                end=f"{ended:%H:%M}",
+                duration=_fmt_duration(duration),
+                status=conversation["status"],
+            )
         )
         if conversation["summary"]:
             print()
@@ -270,7 +277,7 @@ def cmd_show(args, settings: Settings) -> int:
         facts = storage.fact_rows_of(args.id)
         if facts:
             print()
-            print("Факты:")
+            print(t("cli.show.facts"))
             for row in facts:
                 mark = (
                     f"[{datetime.fromtimestamp(row['said_at']):%H:%M}] "
@@ -282,13 +289,13 @@ def cmd_show(args, settings: Settings) -> int:
         tasks = storage.tasks_of(args.id)
         if tasks:
             print()
-            print("Задачи:")
+            print(t("cli.show.tasks"))
             for row in tasks:
                 parts = [row["text"]]
                 if row["assignee"]:
                     parts.append(f"({row['assignee']})")
                 if row["due"]:
-                    parts.append(f"— до {row['due']}")
+                    parts.append(t("export.task.due", due=row["due"]))
                 print("  " + " ".join(parts))
 
         all_rows = storage.utterances_of(args.id, include_private=True)
@@ -304,16 +311,16 @@ def cmd_show(args, settings: Settings) -> int:
         )
         if rows:
             print()
-            print("Реплики:")
+            print(t("cli.show.utterances"))
             for row in rows:
-                mark = " [приват]" if row.is_private else ""
+                mark = t("cli.show.private_mark") if row.is_private else ""
                 print(
                     f"  [{datetime.fromtimestamp(row.started_at):%H:%M}]"
                     f" {row.text}{mark}"
                 )
         if hidden and not args.private:
             print()
-            print(f"(скрыто приватных реплик: {hidden}, показать — --private)")
+            print(t("cli.show.hidden", n=hidden))
     return 0
 
 
@@ -324,13 +331,13 @@ def cmd_prune_raw(args, settings: Settings) -> int:
     ttl = args.ttl_days if args.ttl_days is not None else settings.raw_note_ttl_days
     expired = expired_raw_notes(settings.vault_raw_dir, ttl_days=ttl)
     if not expired:
-        print("Просроченных расшифровок нет.")
+        print(t("cli.prune.none"))
         return 0
     for path in expired:
         print(path)
 
     if not args.yes:
-        print("удалить: добавьте --yes")
+        print(t("cli.prune.hint"))
         return 0
 
     removed = 0
@@ -338,17 +345,17 @@ def cmd_prune_raw(args, settings: Settings) -> int:
         try:
             path.unlink()
         except OSError as exc:
-            print(f"не удалось удалить {path}: {exc}", file=sys.stderr)
+            print(t("cli.prune.failed", path=path, error=exc), file=sys.stderr)
             continue
         removed += 1
-    print(f"Удалено файлов: {removed}")
+    print(t("cli.prune.removed", n=removed))
     return 0
 
 
 def cmd_backup(args, settings: Settings) -> int:
     with Storage(settings.db_path) as storage:
         path = storage.backup(args.destination)
-    print(f"Копия базы: {path}")
+    print(t("cli.backup.done", path=path))
     return 0
 
 
@@ -363,7 +370,7 @@ def cmd_wer(args, settings: Settings) -> int:
     reference_path = Path(args.reference)
     for path in (audio_path, reference_path):
         if not path.exists():
-            print(f"Не найден файл: {path}", file=sys.stderr)
+            print(t("cli.file_missing", path=path), file=sys.stderr)
             return 2
 
     try:
@@ -371,7 +378,7 @@ def cmd_wer(args, settings: Settings) -> int:
             audio_path, settings, backend=args.backend, no_vad=args.no_vad
         )
     except NoSpeechFound:
-        print("VAD не нашёл речи — замерять нечего.", file=sys.stderr)
+        print(t("cli.wer.no_speech"), file=sys.stderr)
         return 1
 
     hypothesis = result.hypothesis
@@ -382,10 +389,7 @@ def cmd_wer(args, settings: Settings) -> int:
     reference = reference_path.read_text(encoding="utf-8")
     report = compute_wer(reference, hypothesis)
 
-    note = (
-        f"VAD {'выключен' if args.no_vad else 'включён'}, "
-        f"модель {settings.local_model if backend_name == 'local' else settings.groq_model}"
-    )
+    note = _wer_note(args, settings, backend_name)
     text = render_report(
         report,
         title=audio_path.stem,
@@ -399,17 +403,30 @@ def cmd_wer(args, settings: Settings) -> int:
     print()
     print(text)
 
-    out_dir = Path(args.out_dir) if args.out_dir else reference_path.parent / "замеры"
+    out_dir = (
+        Path(args.out_dir)
+        if args.out_dir
+        else reference_path.parent / t("cli.wer.out_dir")
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y-%m-%d")
     out_path = out_dir / f"{stamp}-{backend_name}.md"
     out_path.write_text(text, encoding="utf-8")
-    (out_dir / f"{stamp}-{backend_name}-распознано.txt").write_text(
+    (out_dir / f"{stamp}-{backend_name}{t('cli.wer.recognized_suffix')}").write_text(
         hypothesis, encoding="utf-8"
     )
-    print(f"Отчёт: {out_path}")
+    print(t("cli.wer.report", path=out_path))
 
     return 0 if report.passed(args.threshold) else 1
+
+
+def _wer_note(args, settings: Settings, backend_name: str) -> str:
+    """Строка настроек замера для отчёта WER."""
+    return t(
+        "cli.wer.note",
+        vad=t("cli.wer.vad_off") if args.no_vad else t("cli.wer.vad_on"),
+        model=settings.local_model if backend_name == "local" else settings.groq_model,
+    )
 
 
 def cmd_homecoming(args, settings: Settings) -> int:
@@ -422,16 +439,16 @@ def cmd_homecoming(args, settings: Settings) -> int:
     from .wer import compute_wer, render_report
 
     wer_dir = Path(args.wer_dir)
-    out_dir = Path(args.out_dir) if args.out_dir else wer_dir / "замеры"
+    out_dir = Path(args.out_dir) if args.out_dir else wer_dir / t("cli.wer.out_dir")
 
-    print("Приёмка возвращения — гейт A1")
+    print(t("cli.homecoming.title"))
     print()
 
     # Шаг 1. Окружение: что готово, чего не хватает.
-    print("Шаг 1. Окружение")
+    print(t("cli.homecoming.step1"))
     blocking: list[str] = []
     if args.skip_env:
-        print("пропущено флагом --skip-env")
+        print(t("cli.homecoming.skipped"))
     else:
         for check in homecoming.check_environment(settings):
             mark = "✅" if check.ok else ("❌" if check.blocking else "⚠️")
@@ -441,69 +458,61 @@ def cmd_homecoming(args, settings: Settings) -> int:
     print()
 
     # Шаг 2. Эталон: без записи и вычитки дальше идти некуда.
-    print("Шаг 2. Эталон")
+    print(t("cli.homecoming.step2"))
     state = find_reference(wer_dir, args.name)
     if not (state.audio_ok and state.text_ok):
         script = PROJECT_ROOT / "tests" / "wer" / "текст-для-начитки.md"
-        print(f"  {'✅' if state.audio_ok else '❌'} аудио: {state.audio}")
-        print(f"  {'✅' if state.text_ok else '❌'} текст: {state.text}")
-        print("Эталона нет или он не готов. Что сделать:")
-        print("  1. Запиши 3 минуты речи: кулон на груди, как носишь обычно,")
-        print(f"     обычный темп; текст начитки — {script}")
-        print(f"  2. Положи аудио сюда: {state.audio}")
-        print(
-            "     (16 кГц моно WAV; сконвертировать: "
-            "ffmpeg -i <файл> -ac 1 -ar 16000 <имя>.wav)"
-        )
-        print(f"  3. Расшифруй дословно руками сюда: {state.text}")
-        print("     (черновик можно получить моделью, вычитка обязательна)")
-        print("  4. После этого запусти эту же команду ещё раз.")
+        print(t("cli.homecoming.audio", mark="✅" if state.audio_ok else "❌", path=state.audio))
+        print(t("cli.homecoming.text", mark="✅" if state.text_ok else "❌", path=state.text))
+        print(t("cli.homecoming.missing"))
+        print(t("cli.homecoming.todo1"))
+        print(t("cli.homecoming.todo1b", script=script))
+        print(t("cli.homecoming.todo2", path=state.audio))
+        print(t("cli.homecoming.todo2b"))
+        print(t("cli.homecoming.todo3", path=state.text))
+        print(t("cli.homecoming.todo3b"))
+        print(t("cli.homecoming.todo4"))
         if state.problems:
-            print("Проблемы:")
+            print(t("cli.homecoming.problems"))
             for problem in state.problems:
                 print(f"  — {problem}")
         return 2
-    print(f"Эталон на месте: {state.audio.name} + {state.text.name}")
+    print(t("cli.homecoming.ready", audio=state.audio.name, text=state.text.name))
     print()
 
     # Готовый текст снимает зависимость от окружения: STT не нужен вовсе.
     if blocking and args.hypothesis is None:
-        print(
-            "Без этого WER не посчитать (или передай --hypothesis с готовым текстом):"
-        )
+        print(t("cli.homecoming.blocked"))
         for item in blocking:
             print(f"  — {item}")
         return 3
 
     # Шаг 3. Замер.
-    print("Шаг 3. Замер")
+    print(t("cli.homecoming.step3"))
     if args.hypothesis is not None:
         hypothesis = Path(args.hypothesis).read_text(encoding="utf-8")
-        backend_name = "готовый-текст"
+        backend_name = t("cli.homecoming.ready_text_backend")
         audio_seconds = 0.0
         processing_seconds = 0.0
         rtf = None
-        note = "готовый распознанный текст из файла, STT не запускался"
+        note = t("cli.homecoming.ready_text_note")
     else:
         try:
             result = homecoming.transcribe_for_wer(
                 state.audio, settings, backend=args.backend, no_vad=args.no_vad
             )
         except NoSpeechFound:
-            print("VAD не нашёл речи — замерять нечего.", file=sys.stderr)
+            print(t("cli.wer.no_speech"), file=sys.stderr)
             return 1
         except Exception as exc:  # модель не грузится и прочее — без трейсбэка
-            print(f"Расшифровка не удалась: {exc}", file=sys.stderr)
+            print(t("cli.homecoming.stt_failed", error=exc), file=sys.stderr)
             return 3
         hypothesis = result.hypothesis
         backend_name = result.backend
         audio_seconds = result.audio_seconds
         processing_seconds = result.processing_seconds
         rtf = processing_seconds / audio_seconds if audio_seconds else None
-        note = (
-            f"VAD {'выключен' if args.no_vad else 'включён'}, "
-            f"модель {settings.local_model if backend_name == 'local' else settings.groq_model}"
-        )
+        note = _wer_note(args, settings, backend_name)
 
     reference = state.text.read_text(encoding="utf-8")
     report = compute_wer(reference, hypothesis)
@@ -520,17 +529,18 @@ def cmd_homecoming(args, settings: Settings) -> int:
 
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y-%m-%d")
-    out_path = out_dir / f"{stamp}-приёмка-{backend_name}.md"
+    base_name = t("cli.homecoming.file", stamp=stamp, backend=backend_name)
+    out_path = out_dir / f"{base_name}.md"
     out_path.write_text(text + "\n" + verdict, encoding="utf-8")
     if args.hypothesis is None:
-        (out_dir / f"{stamp}-приёмка-{backend_name}-распознано.txt").write_text(
+        (out_dir / f"{base_name}{t('cli.wer.recognized_suffix')}").write_text(
             hypothesis, encoding="utf-8"
         )
 
     print()
     print(verdict)
     print()
-    print(f"Отчёт: {out_path}")
+    print(t("cli.wer.report", path=out_path))
 
     return 0 if report.passed(args.threshold) else 1
 
@@ -582,67 +592,59 @@ def cmd_autostart(args, settings: Settings) -> int:
 
     if args.action == "install":
         path = autostart.install()
-        print(f"ярлык создан: {path}")
+        print(t("cli.autostart.created", path=path))
     elif args.action == "remove":
         if autostart.remove():
-            print("ярлык удалён")
+            print(t("cli.autostart.removed"))
         else:
-            print("автозапуск не настроен")
+            print(t("cli.autostart.not_set"))
     else:
         state = autostart.status()
         if state["installed"]:
-            print(f"автозапуск настроен: {state['target']} {state['arguments']}")
+            print(
+                t(
+                    "cli.autostart.set",
+                    target=state["target"],
+                    arguments=state["arguments"],
+                )
+            )
         else:
-            print("автозапуск не настроен")
+            print(t("cli.autostart.not_set"))
     return 0
 
 
+# Код остановки батча → ключ каталога (cli.stop.*).
 _STOP_REASONS = {
-    "stop-file": "стоп-файл",
-    "time-limit": "предел времени",
-    "stt-fused": "предохранитель STT (локальный бэкенд отказал подряд)",
-    "llm-fused": "предохранитель разбора (локальные модели отказали подряд)",
+    "stop-file": "cli.stop.stop_file",
+    "time-limit": "cli.stop.time_limit",
+    "stt-fused": "cli.stop.stt_fused",
+    "llm-fused": "cli.stop.llm_fused",
 }
+
+_INGEST_LINES = (
+    "recovered", "chunks", "utterances", "duplicates", "silent", "failed", "undecodable",
+)
+# Порядок строк итога батча. Подписи — cli.batch.<поле>: по ним же трей
+# собирает уведомление (tray_extras.batch_summary), на любом языке.
+BATCH_LINES = (
+    "recovered", "stitched", "transcribed", "failed", "batches", "conversations",
+    "analysed", "skipped", "nlu_failed", "accepted", "rejected", "notes",
+    "raw_notes", "exported_tasks", "unloaded", "purged_audio", "purged_chunks",
+)
 
 
 def _print_ingest(stats) -> None:
-    for title, value in (
-        ("восстановлено фрагментов", stats.recovered),
-        ("обработано фрагментов", stats.chunks),
-        ("создано реплик", stats.utterances),
-        ("дублей реплик", stats.duplicates),
-        ("фрагментов без речи", stats.silent),
-        ("фрагментов с ошибкой", stats.failed),
-        ("фрагментов с чужой кодировкой", stats.undecodable),
-    ):
-        print(f"{title}: {value}")
+    for name in _INGEST_LINES:
+        print(f"{t(f'cli.ingest.{name}')}: {getattr(stats, name)}")
 
 
 def _print_batch(stats) -> None:
-    for title, value in (
-        ("восстановлено фрагментов", stats.recovered),
-        ("склеено обрывков на стыках", stats.stitched),
-        ("расшифровано реплик", stats.transcribed),
-        ("ошибок расшифровки", stats.failed),
-        ("пачек", stats.batches),
-        ("собрано разговоров", stats.conversations),
-        ("разобрано NLU", stats.analysed),
-        ("отсеяно фильтром разговора", stats.skipped),
-        ("сбоев NLU", stats.nlu_failed),
-        ("реплик принято", stats.accepted),
-        ("реплик отклонено", stats.rejected),
-        ("заметок дня записано", stats.notes),
-        ("расшифровок записано", stats.raw_notes),
-        ("задач выгружено", stats.exported_tasks),
-        ("моделей выгружено из VRAM", stats.unloaded),
-        ("удалено аудио по TTL", stats.purged_audio),
-        ("удалено фрагментов очереди по TTL", stats.purged_chunks),
-    ):
-        print(f"{title}: {value}")
+    for name in BATCH_LINES:
+        print(f"{t(f'cli.batch.{name}')}: {getattr(stats, name)}")
     if stats.stopped_by is not None:
-        print(
-            f"батч остановлен: {_STOP_REASONS.get(stats.stopped_by, stats.stopped_by)}"
-        )
+        key = _STOP_REASONS.get(stats.stopped_by)
+        reason = t(key) if key else stats.stopped_by
+        print(t("cli.batch.stopped", reason=reason))
 
 
 def cmd_worker(args, settings: Settings) -> int:
@@ -651,7 +653,7 @@ def cmd_worker(args, settings: Settings) -> int:
 
     with Worker(settings) as worker:
         if args.action == "recover":
-            print(f"возвращено в очередь: {worker.recover()}")
+            print(t("cli.worker.recovered", n=worker.recover()))
         elif args.action == "ingest":
             if args.loop:
                 stats = worker.run_ingest(interval_s=args.interval)
@@ -672,12 +674,10 @@ def cmd_worker(args, settings: Settings) -> int:
     return 0
 
 
-_LLM_PROBE_QUESTION = "Ответь одним словом: столица России?"
-
-# Известные облачные бэкенды: имя настройки → пояснение для человека.
+# Известные облачные бэкенды: имя настройки → ключ пояснения для человека.
 _KNOWN_CLOUD_BACKENDS = {
-    "gateway": "облачный провайдер шлюза",  # локальный порт, облачный счёт (llm.GatewayBackend)
-    "groq": "США",
+    "gateway": "cli.llm.cloud_gateway",  # локальный порт, облачный счёт (llm.GatewayBackend)
+    "groq": "cli.llm.cloud_groq",
 }
 
 
@@ -706,7 +706,7 @@ def cmd_llm_check(args, settings: Settings) -> int:
             if args.probe:
                 try:
                     result = backend.complete(
-                        [{"role": "user", "content": _LLM_PROBE_QUESTION}],
+                        [{"role": "user", "content": t("cli.llm.probe_question")}],
                         max_tokens=32,
                     )
                     entry["probe_latency_s"] = round(result.latency_s, 1)
@@ -716,7 +716,7 @@ def cmd_llm_check(args, settings: Settings) -> int:
         else:
             entry["ready"] = False
             reason = getattr(backend, "probe_error", None)
-            entry["probe_error"] = reason or "не настроен"
+            entry["probe_error"] = reason or t("cli.llm.not_configured")
         entries.append(entry)
 
     enabled_names = {entry["name"] for entry in entries}
@@ -728,7 +728,7 @@ def cmd_llm_check(args, settings: Settings) -> int:
                 "name": name,
                 "is_cloud": True,
                 "enabled": False,
-                "cloud_note": note,
+                "cloud_note": t(note),
             }
         )
 
@@ -749,11 +749,7 @@ def cmd_llm_check(args, settings: Settings) -> int:
         _print_llm_check(entries, local_ready)
 
     if not local_ready:
-        print(
-            "предупреждение: среди включённых моделей нет локальной — "
-            "штатный разбор невозможен, а облако запрещено",
-            file=sys.stderr,
-        )
+        print(t("cli.llm.no_local"), file=sys.stderr)
         return 1
     return 0
 
@@ -762,21 +758,22 @@ def _print_llm_check(entries: list[dict], local_ready: bool) -> None:
     first_enabled = True
     for entry in entries:
         if entry["enabled"]:
-            kind = "ОБЛАКО" if entry["is_cloud"] else "локально"
+            kind = t("cli.llm.cloud") if entry["is_cloud"] else t("cli.llm.local")
             if entry["ready"]:
-                status = "готова"
+                status = t("cli.llm.ready")
                 if "probe_latency_s" in entry:
-                    status += f" · {entry['probe_latency_s']} с: {entry['probe_reply']}"
+                    status += t(
+                        "cli.llm.probe",
+                        seconds=entry["probe_latency_s"],
+                        reply=entry["probe_reply"],
+                    )
             else:
-                status = f"НЕ готова: {entry['probe_error']}"
-            prefix = "модель разбора: " if first_enabled else "  "
+                status = t("cli.llm.not_ready", error=entry["probe_error"])
+            prefix = t("cli.llm.prefix") if first_enabled else "  "
             first_enabled = False
             print(f"{prefix}{entry['name']} ({kind}), {entry['model']} — {status}")
         else:
-            print(
-                f"  {entry['name']} (ОБЛАКО, {entry['cloud_note']})"
-                " — выключена в настройках"
-            )
+            print(t("cli.llm.disabled", name=entry["name"], note=entry["cloud_note"]))
     if local_ready:
         from .privacy import cloud_policy_line
 
@@ -788,27 +785,27 @@ def _print_llm_check(entries: list[dict], local_ready: bool) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="uzel", description="Ядро УЗЕЛ")
+    parser = argparse.ArgumentParser(prog="uzel", description=t("cli.description"))
     parser.add_argument("--log-level", default=None)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    search = subparsers.add_parser("search", help="поиск по памяти")
+    search = subparsers.add_parser("search", help=t("cli.help.search"))
     search.add_argument("query")
     search.add_argument("--limit", type=int, default=10)
-    search.add_argument("--plain", action="store_true", help="только подстрочный поиск")
+    search.add_argument("--plain", action="store_true", help=t("cli.help.search_plain"))
     search.set_defaults(func=cmd_search)
 
-    stats = subparsers.add_parser("stats", help="что накоплено")
+    stats = subparsers.add_parser("stats", help=t("cli.help.stats"))
     stats.set_defaults(func=cmd_stats)
 
-    quality = subparsers.add_parser("quality-report", help="сводка фильтра качества")
-    quality.add_argument("--day", default=None, help="сутки ГГГГ-ММ-ДД")
+    quality = subparsers.add_parser("quality-report", help=t("cli.help.quality"))
+    quality.add_argument("--day", default=None, help=t("cli.help.day"))
     quality.add_argument(
-        "--limit", type=int, default=0, help="показать N примеров отклонённых реплик"
+        "--limit", type=int, default=0, help=t("cli.help.quality_limit")
     )
     quality.set_defaults(func=cmd_quality_report)
 
-    privacy = subparsers.add_parser("privacy", help="стоп-режимы записи")
+    privacy = subparsers.add_parser("privacy", help=t("cli.help.privacy"))
     privacy.add_argument(
         "action",
         choices=("status", "mute", "unmute", "pause"),
@@ -818,154 +815,154 @@ def build_parser() -> argparse.ArgumentParser:
     privacy.add_argument("minutes", type=float, nargs="?", default=10.0)
     privacy.set_defaults(func=cmd_privacy)
 
-    purge = subparsers.add_parser("purge", help="удалить сырое аудио по TTL")
+    purge = subparsers.add_parser("purge", help=t("cli.help.purge"))
     purge.add_argument("--ttl-days", type=int, default=None)
     purge.set_defaults(func=cmd_purge)
 
     export = subparsers.add_parser(
-        "export", help="перевыгрузка суток из базы без расшифровки и NLU"
+        "export", help=t("cli.help.export")
     )
     export.add_argument(
-        "--day", default=None, help="сутки ГГГГ-ММ-ДД; без значения — сегодня"
+        "--day", default=None, help=t("cli.help.export_day")
     )
     export.add_argument(
         "--with-transcript",
         action="store_true",
-        help="дополнительно файл сырой расшифровки",
+        help=t("cli.help.with_transcript"),
     )
     export.set_defaults(func=cmd_export)
 
-    show = subparsers.add_parser("show", help="разговор целиком в терминал")
+    show = subparsers.add_parser("show", help=t("cli.help.show"))
     show.add_argument("id", type=int)
     show.add_argument(
         "--private",
         action="store_true",
-        help="показать и приватные реплики с пометкой [приват]",
+        help=t("cli.help.show_private"),
     )
     show.set_defaults(func=cmd_show)
 
     prune_raw = subparsers.add_parser(
-        "prune-raw", help="TTL сырых расшифровок в Obsidian"
+        "prune-raw", help=t("cli.help.prune")
     )
     prune_raw.add_argument(
-        "--ttl-days", type=int, default=None, help="по умолчанию из настроек"
+        "--ttl-days", type=int, default=None, help=t("cli.help.prune_ttl")
     )
     prune_raw.add_argument(
-        "--yes", action="store_true", help="действительно удалить файлы"
+        "--yes", action="store_true", help=t("cli.help.prune_yes")
     )
     prune_raw.set_defaults(func=cmd_prune_raw)
 
-    backup = subparsers.add_parser("backup", help="копия базы")
+    backup = subparsers.add_parser("backup", help=t("cli.help.backup"))
     backup.add_argument("destination")
     backup.set_defaults(func=cmd_backup)
 
-    wer = subparsers.add_parser("wer", help="замер качества распознавания на эталоне")
-    wer.add_argument("audio", help="WAV 16 кГц моно")
-    wer.add_argument("reference", help="выверенный вручную транскрипт")
+    wer = subparsers.add_parser("wer", help=t("cli.help.wer"))
+    wer.add_argument("audio", help=t("cli.help.wer_audio"))
+    wer.add_argument("reference", help=t("cli.help.wer_reference"))
     wer.add_argument("--backend", choices=("local", "groq"), default=None)
     wer.add_argument("--threshold", type=float, default=0.15)
-    wer.add_argument("--no-vad", action="store_true", help="без отсечения тишины")
+    wer.add_argument("--no-vad", action="store_true", help=t("cli.help.no_vad"))
     wer.add_argument("--out-dir", default=None)
     wer.set_defaults(func=cmd_wer)
 
     homecoming_cmd = subparsers.add_parser(
         "приёмка-возвращения",
         aliases=["homecoming"],  # ASCII-имя нужно для cmd.exe
-        help="окружение, эталон, WER и вердикт по A1 (одной командой)",
+        help=t("cli.help.homecoming"),
     )
     homecoming_cmd.add_argument(
         "--wer-dir",
         default=PROJECT_ROOT / "tests" / "wer",
-        help="папка с эталоном (по умолчанию tests/wer)",
+        help=t("cli.help.homecoming_dir"),
     )
-    homecoming_cmd.add_argument("--name", default="эталон-01", help="имя эталона")
+    homecoming_cmd.add_argument("--name", default="эталон-01", help=t("cli.help.homecoming_name"))
     homecoming_cmd.add_argument(
         "--hypothesis",
         default=None,
-        help="готовый распознанный текст: STT не запускается, RTF не считается",
+        help=t("cli.help.homecoming_hypothesis"),
     )
     homecoming_cmd.add_argument("--backend", choices=("local", "groq"), default=None)
     homecoming_cmd.add_argument("--threshold", type=float, default=0.15)
     homecoming_cmd.add_argument(
-        "--no-vad", action="store_true", help="без отсечения тишины"
+        "--no-vad", action="store_true", help=t("cli.help.no_vad")
     )
     homecoming_cmd.add_argument("--out-dir", default=None)
     homecoming_cmd.add_argument(
-        "--skip-env", action="store_true", help="не проверять окружение"
+        "--skip-env", action="store_true", help=t("cli.help.skip_env")
     )
     homecoming_cmd.set_defaults(func=cmd_homecoming)
 
-    serve = subparsers.add_parser("serve", help="поднять ядро")
+    serve = subparsers.add_parser("serve", help=t("cli.help.serve"))
     serve.add_argument("--host", default=None)
     serve.add_argument("--port", type=int, default=None)
     serve.set_defaults(func=cmd_serve)
 
-    app = subparsers.add_parser("app", help="окно и трей на ПК")
-    app.add_argument("--host", default=None, help="адрес ядра")
-    app.add_argument("--port", type=int, default=None, help="порт ядра")
-    app.add_argument("--no-window", action="store_true", help="только сервер и трей")
-    app.add_argument("--no-tray", action="store_true", help="без трея")
+    app = subparsers.add_parser("app", help=t("cli.help.app"))
+    app.add_argument("--host", default=None, help=t("cli.help.host"))
+    app.add_argument("--port", type=int, default=None, help=t("cli.help.port"))
+    app.add_argument("--no-window", action="store_true", help=t("cli.help.no_window"))
+    app.add_argument("--no-tray", action="store_true", help=t("cli.help.no_tray"))
     app.add_argument(
         "--autoclose",
         type=float,
         default=None,
-        help="закрыть окно через N секунд (для проверок)",
+        help=t("cli.help.autoclose"),
     )
     app.set_defaults(func=cmd_app)
 
-    autostart = subparsers.add_parser("autostart", help="запуск вместе с системой")
+    autostart = subparsers.add_parser("autostart", help=t("cli.help.autostart"))
     autostart.add_argument("action", choices=("install", "remove", "status"))
     autostart.set_defaults(func=cmd_autostart)
 
-    worker = subparsers.add_parser("worker", help="воркер конвейера")
+    worker = subparsers.add_parser("worker", help=t("cli.help.worker"))
     worker_sub = worker.add_subparsers(dest="action", required=True)
 
     worker_recover = worker_sub.add_parser(
-        "recover", help="вернуть прерванное в очередь"
+        "recover", help=t("cli.help.recover")
     )
     worker_recover.set_defaults(func=cmd_worker)
 
     worker_ingest = worker_sub.add_parser(
-        "ingest", help="дешёвый проход: очередь → VAD → реплики"
+        "ingest", help=t("cli.help.ingest")
     )
     worker_ingest.add_argument(
-        "--limit", type=int, default=None, help="сколько фрагментов взять за раз"
+        "--limit", type=int, default=None, help=t("cli.help.ingest_limit")
     )
     worker_ingest.add_argument(
-        "--loop", action="store_true", help="крутить цикл до стоп-файла"
+        "--loop", action="store_true", help=t("cli.help.ingest_loop")
     )
     worker_ingest.add_argument(
-        "--interval", type=float, default=None, help="пауза между проходами, с"
+        "--interval", type=float, default=None, help=t("cli.help.ingest_interval")
     )
     worker_ingest.set_defaults(func=cmd_worker)
 
     worker_batch = worker_sub.add_parser(
-        "batch", help="ночной батч: расшифровка → разговоры → NLU → экспорт"
+        "batch", help=t("cli.help.batch")
     )
     worker_batch.add_argument("--batch-size", type=int, default=None)
     worker_batch.add_argument("--time-limit", type=float, default=None)
     worker_batch.add_argument("--max-batches", type=int, default=None)
     worker_batch.add_argument("--close-after", type=float, default=None)
     worker_batch.add_argument(
-        "--no-export", action="store_true", help="не писать в Obsidian"
+        "--no-export", action="store_true", help=t("cli.help.no_export")
     )
     worker_batch.add_argument(
         "--with-transcript",
         action="store_true",
-        help="писать файлы сырой расшифровки поверх настройки export_transcript",
+        help=t("cli.help.batch_transcript"),
     )
     worker_batch.set_defaults(func=cmd_worker)
 
     llm_check = subparsers.add_parser(
-        "llm-check", help="чем разбираются разговоры и не уходит ли в облако"
+        "llm-check", help=t("cli.help.llm_check")
     )
     llm_check.add_argument(
         "--probe",
         action="store_true",
-        help="реальный короткий запрос к каждой доступной модели",
+        help=t("cli.help.probe"),
     )
     llm_check.add_argument(
-        "--json", action="store_true", help="те же сведения машинным форматом"
+        "--json", action="store_true", help=t("cli.help.json")
     )
     llm_check.set_defaults(func=cmd_llm_check)
 
@@ -973,8 +970,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    # Язык нужен уже справке argparse: выбор из окна сильнее UZEL_LANG.
     settings = get_settings()
+    i18n.configure(settings)
+    args = build_parser().parse_args(argv)
     setup_logging(args.log_level or settings.log_level)
     return args.func(args, settings)
 

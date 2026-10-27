@@ -73,6 +73,6 @@ class STTBackend(abc.ABC):
 
     @abc.abstractmethod
     def transcribe(
-        self, samples: np.ndarray, sample_rate: int, language: str
+        self, samples: np.ndarray, sample_rate: int, language: str | None
     ) -> TranscriptionResult:
         """Расшифровывает отрезок. При неудаче поднимает ``TranscriptionError``."""

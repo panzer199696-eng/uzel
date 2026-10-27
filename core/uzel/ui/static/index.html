@@ -1,84 +1,88 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="{ЯЗЫК}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>УЗЕЛ — Голос в заметки</title>
+  <title>{{t:ui.html.title}}</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="/ui/static/style.css?v={ВЕРСИЯ}&ui=20261013-1">
+  <link rel="stylesheet" href="/ui/static/style.css?v={ВЕРСИЯ}&ui=20261027-1">
 </head>
 <body>
   <div class="page">
     <header class="top">
       <div class="brand">
         <svg class="brand-mark" viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect width="40" height="40" rx="12" fill="#e5eee7"/><path d="M12 14v10a5 5 0 0 0 10 0V14a3 3 0 0 1 6 0v12M12 20h16" stroke="#3a6550" stroke-width="2.5" stroke-linecap="round"/></svg>
-        <div><h1>УЗЕЛ</h1><p>Голос в заметки</p></div>
+        <div><h1>{{t:ui.html.brand}}</h1><p>{{t:ui.html.tagline}}</p></div>
       </div>
-      <span class="local-badge"><span aria-hidden="true"></span>На этом ПК</span>
+      <div class="top-actions">
+        <label class="lang-field"><span>{{t:ui.lang.label}}</span><select id="lang-select">{ЯЗЫКИ}</select></label>
+        <span class="local-badge"><span aria-hidden="true"></span>{{t:ui.html.local_badge}}</span>
+      </div>
     </header>
     <main>
       <section class="status panel" aria-labelledby="status-heading">
-        <div class="eyebrow" id="status-heading">Связь и запись</div>
-        <div id="recording" class="plate plate-unknown" role="status" aria-live="polite">Проверяем состояние…</div>
+        <div class="eyebrow" id="status-heading">{{t:ui.html.status_heading}}</div>
+        <div id="recording" class="plate plate-unknown" role="status" aria-live="polite">{{t:ui.html.checking_state}}</div>
         <div class="status-grid">
-          <div class="status-card"><h3>Кулон</h3><div id="device" class="card-value">Проверяем связь…</div></div>
-          <div class="status-card"><h3>Режим записи</h3><div id="permission" class="card-value">Проверяем…</div></div>
-          <div class="status-card"><h3>Обработка</h3><div id="queue" class="card-value">Проверяем очередь…</div></div>
+          <div class="status-card"><h3>{{t:ui.html.card_pendant}}</h3><div id="device" class="card-value">{{t:ui.html.checking_connection}}</div></div>
+          <div class="status-card"><h3>{{t:ui.html.card_mode}}</h3><div id="permission" class="card-value">{{t:ui.html.checking}}</div></div>
+          <div class="status-card"><h3>{{t:ui.html.card_processing}}</h3><div id="queue" class="card-value">{{t:ui.html.checking_queue}}</div></div>
         </div>
         <div class="buttons">
-          <button id="btn-mute" type="button" disabled>Пауза на 30 минут</button>
-          <button id="btn-pause" type="button" disabled>Выключить запись</button>
-          <button id="btn-resume" class="button-primary" type="button" disabled>Возобновить запись</button>
+          <button id="btn-mute" type="button" disabled>{{t:ui.html.btn_mute}}</button>
+          <button id="btn-pause" type="button" disabled>{{t:ui.html.btn_pause}}</button>
+          <button id="btn-resume" class="button-primary" type="button" disabled>{{t:ui.html.btn_resume}}</button>
         </div>
-        <p class="control-note">Пауза закончится автоматически. После выключения запись нужно возобновить вручную.</p>
+        <p class="control-note">{{t:ui.html.control_note}}</p>
         <p id="action-message" class="action-message" role="status" aria-live="polite"></p>
       </section>
       <div class="workspace-grid">
         <section class="day panel" aria-labelledby="day-heading">
-          <div class="section-header"><div><div class="eyebrow">Ваш день</div><h2 id="day-heading">Разговоры за день</h2></div></div>
+          <div class="section-header"><div><div class="eyebrow">{{t:ui.html.day_eyebrow}}</div><h2 id="day-heading">{{t:ui.html.day_heading}}</h2></div></div>
           <div class="day-toolbar">
-            <div class="date-field"><label for="day-date">Дата</label><input type="date" id="day-date"></div>
+            <div class="date-field"><label for="day-date">{{t:ui.html.date}}</label><input type="date" id="day-date"></div>
             <div class="day-nav">
-              <button id="day-prev" class="button-icon" type="button" aria-label="Предыдущий день" title="Предыдущий день">‹</button>
-              <button id="day-today" type="button">Сегодня</button>
-              <button id="day-next" class="button-icon" type="button" aria-label="Следующий день" title="Следующий день">›</button>
+              <button id="day-prev" class="button-icon" type="button" aria-label="{{t:ui.html.prev_day}}" title="{{t:ui.html.prev_day}}">‹</button>
+              <button id="day-today" type="button">{{t:ui.html.today}}</button>
+              <button id="day-next" class="button-icon" type="button" aria-label="{{t:ui.html.next_day}}" title="{{t:ui.html.next_day}}">›</button>
             </div>
           </div>
-          <div id="day-summary" class="day-summary" role="status" aria-live="polite">Загружаем сводку…</div>
-          <div id="day-feed" aria-busy="true"><div class="empty-state">Загружаем разговоры…</div></div>
+          <div id="day-summary" class="day-summary" role="status" aria-live="polite">{{t:ui.day.loading_summary}}</div>
+          <div id="day-feed" aria-busy="true"><div class="empty-state">{{t:ui.day.loading_conversations}}</div></div>
         </section>
         <aside class="side-column">
           <section class="tasks panel" aria-labelledby="tasks-heading">
-            <div class="section-header"><div><div class="eyebrow">Из разговоров</div><h2 id="tasks-heading">Задачи за день</h2></div><span id="tasks-count" class="count-badge">—</span></div>
-            <div id="day-tasks" aria-live="polite" aria-busy="true"><div class="empty-state">Загружаем задачи…</div></div>
+            <div class="section-header"><div><div class="eyebrow">{{t:ui.html.tasks_eyebrow}}</div><h2 id="tasks-heading">{{t:ui.html.tasks_heading}}</h2></div><span id="tasks-count" class="count-badge">—</span></div>
+            <div id="day-tasks" aria-live="polite" aria-busy="true"><div class="empty-state">{{t:ui.day.loading_tasks}}</div></div>
           </section>
           <section class="search panel" aria-labelledby="search-heading">
-            <div class="section-header"><div><div class="eyebrow">Найти важное</div><h2 id="search-heading">Поиск по разговорам</h2></div></div>
+            <div class="section-header"><div><div class="eyebrow">{{t:ui.html.search_eyebrow}}</div><h2 id="search-heading">{{t:ui.html.search_heading}}</h2></div></div>
             <form id="search-form">
-              <label for="search-q">Что найти</label>
-              <div class="search-controls"><input type="search" id="search-q" placeholder="Слово, тема или фраза" autocomplete="off"><button type="submit">Найти</button></div>
+              <label for="search-q">{{t:ui.html.search_label}}</label>
+              <div class="search-controls"><input type="search" id="search-q" placeholder="{{t:ui.html.search_placeholder}}" autocomplete="off"><button type="submit">{{t:ui.html.search_button}}</button></div>
             </form>
-            <p id="search-note" class="search-note" role="status" aria-live="polite">Поиск по сохранённым разговорам.</p>
+            <p id="search-note" class="search-note" role="status" aria-live="polite">{{t:ui.html.search_note}}</p>
             <div id="search-results" aria-busy="false"></div>
           </section>
         </aside>
       </div>
       <details class="diagnostics panel">
-        <summary><span>Диагностика и качество</span><span class="summary-hint">Технические сведения</span></summary>
+        <summary><span>{{t:ui.html.diag_title}}</span><span class="summary-hint">{{t:ui.html.diag_hint}}</span></summary>
         <div class="diagnostics-content">
           <div class="diagnostics-grid">
-            <div><h3>Программа</h3><p id="version">Версия неизвестна</p></div>
-            <div><h3>База заметок</h3><p id="db">Проверяем…</p></div>
-            <div><h3>Окна без записи</h3><p id="windows">Проверяем…</p></div>
-            <div><h3>Расшифровка</h3><p id="worker">Проверяем…</p><p class="muted">Расшифровка выполняется отдельно. Запуск вручную — «Расшифровать сейчас» в меню значка программы в трее.</p></div>
+            <div><h3>{{t:ui.html.diag_app}}</h3><p id="version">{{t:ui.version.unknown}}</p></div>
+            <div><h3>{{t:ui.html.diag_db}}</h3><p id="db">{{t:ui.html.checking}}</p></div>
+            <div><h3>{{t:ui.html.diag_windows}}</h3><p id="windows">{{t:ui.html.checking}}</p></div>
+            <div><h3>{{t:ui.html.diag_transcription}}</h3><p id="worker">{{t:ui.html.checking}}</p><p class="muted">{{t:ui.html.diag_transcription_note}}</p></div>
           </div>
-          <div class="quality"><h3>Качество за выбранный день</h3><p class="muted">Статистика относится к уже обработанным репликам. Фильтр помогает отмечать сомнительные фрагменты и не показывает состояние связи с кулоном.</p><div id="quality-body" aria-live="polite">Загружаем статистику…</div></div>
+          <div class="quality"><h3>{{t:ui.html.quality_heading}}</h3><p class="muted">{{t:ui.html.quality_note}}</p><div id="quality-body" aria-live="polite">{{t:ui.quality.loading}}</div></div>
         </div>
       </details>
     </main>
-    <footer>УЗЕЛ <span aria-hidden="true">·</span> Голос, который становится заметкой</footer>
+    <footer>{{t:ui.html.footer_brand}} <span aria-hidden="true">·</span> {{t:ui.html.footer_text}}</footer>
   </div>
-  <script src="/ui/static/app.js?v={ВЕРСИЯ}&ui=20261013-1"></script>
+  <script>window.UZEL_I18N = {СЛОВАРЬ};</script>
+  <script src="/ui/static/app.js?v={ВЕРСИЯ}&ui=20261027-1"></script>
 </body>
 </html>

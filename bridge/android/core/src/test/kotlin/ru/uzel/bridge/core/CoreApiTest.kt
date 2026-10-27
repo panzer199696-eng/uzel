@@ -53,6 +53,19 @@ class CoreApiTest {
     }
 
     @Test
+    fun `приватность — значения на языке ядра, решение по машинному коду`() {
+        // Ядро с английским интерфейсом отдаёт «off», а не «выключена» (27.10.2026).
+        val off = parsePrivacy("""{"запись":"off","причина":"manual pause","код":"manual","до":null}""")
+        assertFalse(off.recording)
+        val on = parsePrivacy("""{"запись":"on","причина":"allowed","код":"allowed","до":null}""")
+        assertTrue(on.recording)
+        val schedule = parsePrivacy("""{"запись":"выключена","причина":"x","код":"schedule","до":null}""")
+        assertFalse(schedule.recording)
+        // Старое ядро без кода — по-прежнему по слову.
+        assertFalse(parsePrivacy("""{"запись":"выключена"}""").recording)
+    }
+
+    @Test
     fun `разговор с расшифровкой и поиск`() {
         val d = parseConversation(
             """{"id":7,"started_at":1,"ended_at":2,"started":"10:00","ended":"10:05","duration":"5 мин",
@@ -121,7 +134,8 @@ class CoreApiTest {
         val r = CoreApi(url(), "").day()
         assertTrue(r is ApiResult.Fail)
         assertEquals(401, (r as ApiResult.Fail).code)
-        assertTrue(r.message.contains("токен"))
+        // Текст причины — в ресурсах приложения на языке телефона, здесь — код.
+        assertEquals(FailReason.UNAUTHORIZED, r.reason)
     }
 
     @Test

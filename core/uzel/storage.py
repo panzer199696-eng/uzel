@@ -407,6 +407,22 @@ class Storage:
         ).fetchall()
         return [UtteranceRow.from_row(row) for row in rows]
 
+    def recent_language(self, limit: int = 200) -> str | None:
+        """Самый частый язык последних ``limit`` расшифровок или ``None``.
+
+        Подсказка для коротких реплик при ``UZEL_STT_LANGUAGE=auto``
+        (см. stt/language.py), пока в прогоне нет своей длинной реплики.
+        """
+        row = self._conn.execute(
+            """SELECT language, COUNT(*) AS n FROM (
+                   SELECT language FROM utterances
+                   WHERE language IS NOT NULL AND language != ''
+                   ORDER BY started_at DESC LIMIT ?)
+               GROUP BY language ORDER BY n DESC LIMIT 1""",
+            (limit,),
+        ).fetchone()
+        return row["language"] if row else None
+
     def find_utterance(
         self, *, uid: str, started_at: float, ended_at: float
     ) -> UtteranceRow | None:

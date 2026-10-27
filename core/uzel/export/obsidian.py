@@ -6,6 +6,10 @@
 с якорями ``^uzel-N``: настоящий дедуп — в базе (``tasks.exported_at``),
 якорь лишь страхует от двойной записи, если воркер упал между записью в файл
 и пометкой в базе.
+
+Заголовки, подписи, ключи frontmatter, имена файлов и формат даты — на языке
+интерфейса (``lang``, по умолчанию текущий; каталоги ``export.*``). Русский
+вывод совпадает с прежним байт-в-байт.
 """
 
 from __future__ import annotations
@@ -16,6 +20,9 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from .. import i18n
+from ..i18n import t
+
 log = logging.getLogger(__name__)
 
 # Якорь блока Obsidian: ^uzel-<tasks.id>.
@@ -24,7 +31,12 @@ ANCHOR = re.compile(r"\^uzel-(\d+)")
 # В теге Obsidian допустимы буквы, цифры, -, _ и /; прочее выбрасываем.
 _TAG_FORBIDDEN = re.compile(r"[^\w\-/]+", re.UNICODE)
 
+# Суффикс файла расшифровки — по языку; старое имя оставлено для совместимости.
 RAW_NOTE_SUFFIX = " — расшифровка.md"
+
+
+def raw_note_suffix(lang: str | None = None) -> str:
+    return t("export.raw.suffix", lang=lang)
 
 
 @dataclass(frozen=True)
@@ -61,8 +73,19 @@ def _hhmm(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp).strftime("%H:%M")
 
 
-def _minutes(seconds: float) -> str:
-    return f"{seconds / 60:.0f} мин" if seconds >= 60 else f"{seconds:.0f} с"
+def _minutes(seconds: float, lang: str | None = None) -> str:
+    if seconds >= 60:
+        return t("unit.minutes", lang=lang, value=f"{seconds / 60:.0f}")
+    return t("unit.seconds", lang=lang, value=f"{seconds:.0f}")
+
+
+def _frontmatter(lang: str | None, *pairs: tuple[str, object]) -> list[str]:
+    """Строки ``ключ: значение``; ключи с префиксом ``@`` — из каталога языка."""
+    lines = []
+    for key, value in pairs:
+        name = t(f"export.fm.{key[1:]}", lang=lang) if key.startswith("@") else key
+        lines.append(f"{name}: {value}")
+    return lines
 
 
 def normalise_tag(topic: str) -> str:
@@ -78,8 +101,10 @@ def render_day(
     accepted: int = 0,
     rejected: int = 0,
     flagged: int = 0,
+    lang: str | None = None,
 ) -> str:
     """Заметка за сутки: саммари, факты, задачи, метрики — без единой реплики."""
+    lang = lang or i18n.get_language()
     total_speech = sum(item.speech_seconds for item in conversations)
 
     tags: list[str] = []
@@ -91,41 +116,57 @@ def render_day(
 
     lines = [
         "---",
-        f"дата: {day.isoformat()}",
-        "источник: УЗЕЛ",
-        "rag: false",
-        f"разговоров: {len(conversations)}",
-        f"речи_минут: {total_speech / 60:.0f}",
-        f"принято: {accepted}",
-        f"отклонено: {rejected}",
-        # Помеченные фильтром, но пропущенные: пока quality_enforce=False
-        # (ТЗ пакета 2, первые две недели) отклонённых не бывает вовсе, и без
-        # этой строки работа фильтра в заметке не видна никак.
-        f"помечено: {flagged}",
+        *_frontmatter(
+            lang,
+            ("@date", day.isoformat()),
+            ("@source", t("export.fm.source_value", lang=lang)),
+            ("rag", "false"),
+            ("@conversations", len(conversations)),
+            ("@speech_minutes", f"{total_speech / 60:.0f}"),
+            ("@accepted", accepted),
+            ("@rejected", rejected),
+            # Помеченные фильтром, но пропущенные: пока quality_enforce=False
+            # (ТЗ пакета 2, первые две недели) отклонённых не бывает вовсе, и без
+            # этой строки работа фильтра в заметке не видна никак.
+            ("@flagged", flagged),
+        ),
     ]
     if tags:
         lines.append(f"tags: [{', '.join(tags)}]")
     lines += [
         "---",
         "",
-        f"# {day.strftime('%d.%m.%Y')} — день",
+        t("export.day.title", lang=lang, date=day.strftime(t("format.date", lang=lang))),
         "",
     ]
 
     if not conversations:
-        lines += ["_За этот день записей нет._", ""]
+        lines += [t("export.day.empty", lang=lang), ""]
         return "\n".join(lines)
 
     lines += [
-        f"Разговоров: **{len(conversations)}**, речи всего: **{_minutes(total_speech)}**. "
-        f"Реплик принято **{accepted}**, отклонено **{rejected}**.",
+        t(
+            "export.day.totals",
+            lang=lang,
+            conversations=len(conversations),
+            speech=_minutes(total_speech, lang),
+            accepted=accepted,
+            rejected=rejected,
+        ),
         "",
     ]
 
     for index, item in enumerate(conversations, start=1):
         lines += [
-            f"## {index}. {_hhmm(item.started_at)}–{_hhmm(item.ended_at)} "
-            f"({_minutes(item.speech_seconds)}) · разговор {item.conversation_id}",
+            t(
+                "export.day.conversation",
+                lang=lang,
+                index=index,
+                start=_hhmm(item.started_at),
+                end=_hhmm(item.ended_at),
+                speech=_minutes(item.speech_seconds, lang),
+                id=item.conversation_id,
+            ),
             "",
         ]
         if item.summary:
@@ -133,10 +174,10 @@ def render_day(
 
         if item.people:
             names = ", ".join(f"[[{name}]]" for name in item.people)
-            lines += [f"**Участники:** {names}", ""]
+            lines += [t("export.day.people", lang=lang, names=names), ""]
 
         if item.facts:
-            lines += ["**Факты**", ""]
+            lines += [t("export.day.facts", lang=lang), ""]
             for fact in item.facts:
                 if fact.said_at is not None:
                     # Скобки — время, обратные кавычки — чтобы Obsidian не
@@ -149,23 +190,23 @@ def render_day(
         if item.tasks:
             # Чекбоксы живут только во входящем файле: Tasks не должен видеть
             # одну задачу дважды.
-            lines += ["**Задачи** → [[Входящее — задачи]]", ""]
+            lines += [t("export.day.tasks", lang=lang), ""]
             for task in item.tasks:
-                lines.append(f"- {_format_task(task)}")
+                lines.append(f"- {_format_task(task, lang)}")
             lines.append("")
 
         if item.topics:
-            lines += [f"**Темы:** {', '.join(item.topics)}", ""]
+            lines += [t("export.day.topics", lang=lang, topics=", ".join(item.topics)), ""]
 
         if item.rejected:
             # Счёт по разговору, а не по суткам: пороги калибруются на том,
             # в каком именно разговоре фильтр сработал.
-            lines += [f"_Фильтр качества отсеял реплик: {item.rejected}._", ""]
+            lines += [t("export.day.rejected", lang=lang, count=item.rejected), ""]
 
     return "\n".join(lines)
 
 
-def _format_task(task: dict) -> str:
+def _format_task(task: dict, lang: str | None = None) -> str:
     """Задача в заметке дня: только суть, без чекбокса, источника и якоря."""
     parts = [str(task.get("text") or "").strip()]
     assignee = task.get("assignee")
@@ -173,7 +214,7 @@ def _format_task(task: dict) -> str:
     if assignee:
         parts.append(f"({assignee})")
     if due:
-        parts.append(f"— до {due}")
+        parts.append(t("export.task.due", lang=lang, due=due))
     return " ".join(part for part in parts if part)
 
 
@@ -185,11 +226,13 @@ def write_day_note(
     accepted: int = 0,
     rejected: int = 0,
     flagged: int = 0,
+    lang: str | None = None,
 ) -> Path:
     """Пишет заметку за день. Существующая перезаписывается целиком."""
+    lang = lang or i18n.get_language()
     directory = Path(days_dir)
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{day.isoformat()} — день.md"
+    path = directory / t("export.day.file", lang=lang, date=day.isoformat())
     path.write_text(
         render_day(
             day,
@@ -197,6 +240,7 @@ def write_day_note(
             accepted=accepted,
             rejected=rejected,
             flagged=flagged,
+            lang=lang,
         ),
         encoding="utf-8",
     )
@@ -209,22 +253,35 @@ def render_transcript(
     conversations: list[ConversationView],
     *,
     ttl_days: int = 30,
+    lang: str | None = None,
 ) -> str:
-    """Дословная расшифровка дня — временный файл под TTL."""
+    """Дословная расшифровка дня — временный файл под TTL.
+
+    Реплики — дословно на языке разговора; по языку интерфейса только подписи.
+    """
+    lang = lang or i18n.get_language()
     lines = [
         "---",
-        f"дата: {day.isoformat()}",
-        "источник: УЗЕЛ",
-        "rag: false",
-        "временный: true",
-        f"удалить_после: {(day + timedelta(days=ttl_days)).isoformat()}",
+        *_frontmatter(
+            lang,
+            ("@date", day.isoformat()),
+            ("@source", t("export.fm.source_value", lang=lang)),
+            ("rag", "false"),
+            ("@temporary", "true"),
+            ("@delete_after", (day + timedelta(days=ttl_days)).isoformat()),
+        ),
         "---",
         "",
     ]
     for item in conversations:
         lines += [
-            f"## {_hhmm(item.started_at)}–{_hhmm(item.ended_at)} "
-            f"· разговор {item.conversation_id}",
+            t(
+                "export.raw.conversation",
+                lang=lang,
+                start=_hhmm(item.started_at),
+                end=_hhmm(item.ended_at),
+                id=item.conversation_id,
+            ),
             "",
         ]
         for started, speaker, text in item.utterances:
@@ -242,19 +299,22 @@ def write_transcript_note(
     conversations: list[ConversationView],
     *,
     ttl_days: int = 30,
+    lang: str | None = None,
 ) -> Path:
     """Пишет файл сырой расшифровки. Существующий перезаписывается целиком."""
+    lang = lang or i18n.get_language()
     directory = Path(raw_dir)
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{day.isoformat()}{RAW_NOTE_SUFFIX}"
+    path = directory / f"{day.isoformat()}{raw_note_suffix(lang)}"
     path.write_text(
-        render_transcript(day, conversations, ttl_days=ttl_days), encoding="utf-8"
+        render_transcript(day, conversations, ttl_days=ttl_days, lang=lang),
+        encoding="utf-8",
     )
     log.info("расшифровка записана: %s", path)
     return path
 
 
-def render_task_line(task: dict) -> str:
+def render_task_line(task: dict, *, lang: str | None = None) -> str:
     """Строка задачи во входящем списке (ТЗ 4.3): чекбокс, источник, якорь.
 
     ``(Пётр)`` — исполнитель, ``— до …`` — срок, ``· [10:42] разговор 17`` —
@@ -268,13 +328,13 @@ def render_task_line(task: dict) -> str:
     if assignee:
         parts.append(f"({assignee})")
     if due:
-        parts.append(f"— до {due}")
+        parts.append(t("export.task.due", lang=lang, due=due))
 
     conversation_id = task.get("conversation_id")
     if conversation_id is not None:
         started_at = task.get("conversation_started_at")
         stamp = f"[{_hhmm(float(started_at))}] " if started_at is not None else ""
-        parts.append(f"· {stamp}разговор {conversation_id}")
+        parts.append(t("export.task.source", lang=lang, stamp=stamp, id=conversation_id))
 
     anchor = task.get("id")
     if anchor is None:
@@ -294,7 +354,11 @@ def existing_anchors(path: Path | str) -> set[int]:
 
 
 def append_tasks(
-    path: Path | str, tasks: list[dict], *, heading: str = "## Из разговоров"
+    path: Path | str,
+    tasks: list[dict],
+    *,
+    heading: str | None = None,
+    lang: str | None = None,
 ) -> int:
     """Дописывает задачи с якорями, пропуская уже записанные. Число новых.
 
@@ -304,6 +368,9 @@ def append_tasks(
     защита в базе, а не в файле.
     """
     path = Path(path)
+    lang = lang or i18n.get_language()
+    if heading is None:
+        heading = t("export.tasks.heading", lang=lang)
     known = existing_anchors(path)
 
     fresh: list[str] = []
@@ -317,7 +384,7 @@ def append_tasks(
         if anchor in known:
             continue
         known.add(anchor)
-        fresh.append(render_task_line(task))
+        fresh.append(render_task_line(task, lang=lang))
 
     if not fresh:
         return 0
@@ -345,6 +412,7 @@ def expired_raw_notes(
     """Просроченные заметки-расшифровки по дате в имени файла.
 
     Только находит: удаление — явная команда человека (``uzel prune-raw --yes``).
+    Узнаёт расшифровки на любом языке каталогов: язык интерфейса могли сменить.
     """
     directory = Path(raw_dir)
     if not directory.exists():
@@ -352,9 +420,13 @@ def expired_raw_notes(
     now = date.today() if today is None else today
     limit = now - timedelta(days=ttl_days)
 
+    suffixes = sorted(set(i18n.data_all("export.raw.suffix")) | {RAW_NOTE_SUFFIX})
     expired: list[Path] = []
-    for path in sorted(directory.glob(f"*{RAW_NOTE_SUFFIX}")):
-        stamp = path.name[: -len(RAW_NOTE_SUFFIX)]
+    for path in sorted(directory.iterdir()):
+        suffix = next((item for item in suffixes if path.name.endswith(item)), None)
+        if suffix is None or not path.is_file():
+            continue
+        stamp = path.name[: -len(suffix)]
         try:
             created = date.fromisoformat(stamp)
         except ValueError:

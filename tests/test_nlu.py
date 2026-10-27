@@ -641,6 +641,6 @@ def test_prompt_takes_user_role_from_argument():
 def test_user_role_setting_reads_environment(monkeypatch, tmp_path):
     from uzel.config import Settings
 
-    assert Settings(data_dir=tmp_path).user_role == "пользователь"
+    assert Settings(data_dir=tmp_path).user_role is None  # слово — из каталога языка
     monkeypatch.setenv("UZEL_USER_ROLE", "инженер-сметчик")
     assert Settings(data_dir=tmp_path).user_role == "инженер-сметчик"

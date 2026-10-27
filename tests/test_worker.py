@@ -322,7 +322,11 @@ def test_worker_settings_defaults(settings):
     assert settings.worker_claim_limit == 32
     assert settings.worker_stop_file == settings.data_dir / "worker.stop"
     # Конвейер не пишет в корневой файл задач владельца.
-    assert settings.tasks_note == r"Проекты\Узел\Входящее — задачи.md"
+    # Пустая настройка — путь из каталога языка (тесты идут на русском).
+    assert settings.tasks_note is None
+    assert settings.tasks_note_path == (
+        settings.vault_dir / "Проекты" / "Узел" / "Входящее — задачи.md"
+    )
 
 
 # --- дешёвый проход ---

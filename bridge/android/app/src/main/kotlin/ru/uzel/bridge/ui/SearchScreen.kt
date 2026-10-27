@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +38,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import ru.uzel.bridge.AppViewModel
+import ru.uzel.bridge.R
 import ru.uzel.bridge.core.SearchHit
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -52,11 +54,11 @@ fun SearchScreen(vm: AppViewModel) {
             OutlinedTextField(
                 value = vm.query,
                 onValueChange = { vm.query = it },
-                placeholder = { Text("Что обсуждали про…") },
+                placeholder = { Text(stringResource(R.string.search_hint)) },
                 leadingIcon = { Icon(Icons.Rounded.Search, null) },
                 trailingIcon = {
                     if (vm.query.isNotEmpty()) {
-                        IconButton(onClick = { vm.query = "" }) { Icon(Icons.Rounded.Close, "Очистить") }
+                        IconButton(onClick = { vm.query = "" }) { Icon(Icons.Rounded.Close, stringResource(R.string.clear)) }
                     }
                 },
                 singleLine = true,
@@ -79,15 +81,19 @@ fun SearchScreen(vm: AppViewModel) {
             item {
                 EmptyState(
                     Icons.Rounded.ManageSearch,
-                    "Поиск по всему, что слышал кулон",
-                    "Ищет по смыслу, а не только по словам, если ядро держит смысловой индекс",
+                    stringResource(R.string.search_empty_title),
+                    stringResource(R.string.search_empty_text),
                 )
             }
         }
         if (result != null && !state.loading) {
             item {
                 Text(
-                    if (result.hits.isEmpty()) "Ничего не нашлось" else "Найдено ${result.hits.size} — ${result.origin}",
+                    if (result.hits.isEmpty()) {
+                        stringResource(R.string.search_nothing)
+                    } else {
+                        stringResource(R.string.search_found, result.hits.size, result.origin)
+                    },
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 4.dp, top = 8.dp),
@@ -119,7 +125,7 @@ private fun HitCard(hit: SearchHit, query: String, onClick: () -> Unit) {
                     modifier = Modifier.weight(1f),
                 )
                 if (hit.isPrivate) {
-                    Icon(Icons.Rounded.Lock, "Приватное", tint = scheme.tertiary, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Rounded.Lock, stringResource(R.string.private_mark), tint = scheme.tertiary, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.size(4.dp))
                 }
             }

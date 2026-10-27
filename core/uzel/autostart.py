@@ -54,7 +54,9 @@ def install(directory: Path | None = None) -> Path:
     # --hidden: при входе в систему окно не лезет на экран, УЗЕЛ сидит в трее.
     shortcut.Arguments = f'"{project_root / "ops" / "запуск-приложения.py"}" --hidden'
     shortcut.WorkingDirectory = str(project_root)
-    shortcut.Description = "УЗЕЛ — окно и трей"
+    from .i18n import t
+
+    shortcut.Description = t("tray.autostart_description")
     shortcut.save()
     return link
 

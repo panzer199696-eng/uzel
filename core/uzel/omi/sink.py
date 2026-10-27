@@ -10,6 +10,7 @@ from pathlib import Path
 from ..config import Settings
 from ..privacy import PrivacyGate
 from ..storage import Storage
+from ..stt.language import whisper_language
 from .models import (
     ConversationPayload,
     DaySummaryPayload,
@@ -61,7 +62,8 @@ class OmiSink:
         self.storage.set_transcript(
             utterance_id,
             text=text,
-            language=self.settings.stt_language,
+            # Язык Omi не сообщает: при auto — пусто, а не слово «auto».
+            language=whisper_language(self.settings.stt_language),
             backend="omi-cloud",
         )
 

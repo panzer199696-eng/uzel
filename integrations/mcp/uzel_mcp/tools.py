@@ -3,6 +3,7 @@
 Хранилище открывается на каждый вызов: долгоживущее соединение SQLite в чужом
 процессе (Claude Code) не нужно. Ни один инструмент не пишет в базу; ошибки
 ядра (нет Qdrant, нет модели) ловятся и возвращаются строкой, а не исключением.
+Ответы — на языке интерфейса (каталоги ``mcp.*`` и общие ``cli.*``).
 """
 
 from __future__ import annotations
@@ -10,13 +11,16 @@ from __future__ import annotations
 import datetime as dt
 
 from uzel.config import Settings
+from uzel.i18n import t
 from uzel.storage import Storage
 
 from .protocol import InvalidParams
 
 
 def _fmt_duration(seconds: float) -> str:
-    return f"{seconds / 60:.0f} мин" if seconds >= 60 else f"{seconds:.0f} с"
+    if seconds >= 60:
+        return t("unit.minutes", value=f"{seconds / 60:.0f}")
+    return t("unit.seconds", value=f"{seconds:.0f}")
 
 
 def _speaker_name(storage: Storage, utterance_id: int) -> str:
@@ -26,7 +30,7 @@ def _speaker_name(storage: Storage, utterance_id: int) -> str:
                LEFT JOIN people p ON p.id = u.speaker_id WHERE u.id=?""",
             (utterance_id,),
         ).fetchone()
-    return row["name"] if row and row["name"] else "говорящий не размечен"
+    return row["name"] if row and row["name"] else t("cli.speaker_unknown")
 
 
 def _participants(storage: Storage, conversation_id: int) -> list[str]:
@@ -40,7 +44,8 @@ def _participants(storage: Storage, conversation_id: int) -> list[str]:
     return [row["name"] for row in rows]
 
 
-HIDDEN_NOTE = "скрыто {n} реплик: помечены приватными"
+def _hidden_note(n: int) -> str:
+    return t("mcp.hidden", n=n)
 
 
 class UzelTools:
@@ -64,9 +69,7 @@ class UzelTools:
         try:
             return dt.datetime.strptime(value, "%Y-%m-%d").date()
         except ValueError as exc:
-            raise InvalidParams(
-                f"дата должна быть в формате ГГГГ-ММ-ДД, получено: {value!r}"
-            ) from exc
+            raise InvalidParams(t("api.err.bad_date", value=repr(value))) from exc
 
     @staticmethod
     def _day_bounds(day: dt.date) -> tuple[float, float]:
@@ -80,7 +83,7 @@ class UzelTools:
     def search(self, query: str, limit: int = 10, semantic: bool = True) -> str:
         """Смысловой поиск с откатом на подстрочный (как ``uzel search``)."""
         if not (query or "").strip():
-            raise InvalidParams("пустой поисковый запрос")
+            raise InvalidParams(t("api.err.empty_query"))
 
         with Storage(self.settings.db_path) as storage:
             rows: list[tuple[float | None, object]] = []
@@ -98,7 +101,7 @@ class UzelTools:
                     rows = []  # смысловой поиск недоступен — откат ниже
 
             if rows:
-                origin = "смысловым поиском"
+                origin = t("api.search.semantic")
             else:
                 # Для подсчёта скрытых берём всё, включая приватные: умолчание
                 # хранилища их прячет, а «скрыто N» обязано остаться честным
@@ -109,22 +112,22 @@ class UzelTools:
                         query, limit=limit, include_private=True
                     )
                 ]
-                origin = "подстрочным поиском"
+                origin = t("api.search.substring")
 
             if not rows:
-                return "Ничего не нашлось."
+                return t("cli.nothing_found")
 
             visible = [pair for pair in rows if not pair[1].is_private]
             hidden = len(rows) - len(visible)
             if not visible:
                 if hidden:
-                    return f"Нашёл совпадения, но все скрыты ({hidden}): помечены приватными."
-                return "Ничего не нашлось."
+                    return t("mcp.search.all_hidden", n=hidden)
+                return t("cli.nothing_found")
 
-            lines = [f"Нашёл ({origin}):"]
+            lines = [t("mcp.search.found", origin=origin)]
             for score, row in visible:
                 stamp = dt.datetime.fromtimestamp(row.started_at).strftime(
-                    "%d.%m.%Y %H:%M"
+                    t("format.datetime")
                 )
                 conversation = f"#{row.conversation_id}" if row.conversation_id else "—"
                 speaker = _speaker_name(storage, row.id)
@@ -132,7 +135,7 @@ class UzelTools:
                 text = (row.text or "").replace("\n", " ")
                 lines.append(f"{conversation} [{stamp}] {speaker}: {text}{mark}")
             if hidden:
-                lines.append(f"({HIDDEN_NOTE.format(n=hidden)})")
+                lines.append(f"({_hidden_note(hidden)})")
             return "\n".join(lines)
 
     def conversation(self, id: int, with_utterances: bool = False) -> str:
@@ -144,15 +147,26 @@ class UzelTools:
         with Storage(self.settings.db_path) as storage:
             record = storage.get_conversation(id)
             if record is None:
-                return f"Разговора {id} нет."
+                return t("cli.show.missing", id=id)
 
             started = dt.datetime.fromtimestamp(record["started_at"])
             ended = dt.datetime.fromtimestamp(record["ended_at"])
             duration = record["ended_at"] - record["started_at"]
-            lines = [f"Разговор {record['id']} · {started:%d.%m.%Y}"]
+            lines = [
+                t(
+                    "cli.show.header",
+                    id=record["id"],
+                    date=started.strftime(t("format.date")),
+                )
+            ]
             lines.append(
-                f"  {started:%H:%M}–{ended:%H:%M} ({_fmt_duration(duration)})"
-                f", статус: {record['status']}"
+                t(
+                    "cli.show.span",
+                    start=f"{started:%H:%M}",
+                    end=f"{ended:%H:%M}",
+                    duration=_fmt_duration(duration),
+                    status=record["status"],
+                )
             )
             if record["summary"]:
                 lines.append("")
@@ -160,7 +174,7 @@ class UzelTools:
 
             facts = storage.fact_rows_of(id)
             if facts:
-                lines += ["", "Факты:"]
+                lines += ["", t("cli.show.facts")]
                 for row in facts:
                     mark = (
                         f"[{dt.datetime.fromtimestamp(row['said_at']):%H:%M}] "
@@ -171,22 +185,22 @@ class UzelTools:
 
             tasks = storage.tasks_of(id)
             if tasks:
-                lines += ["", "Задачи:"]
+                lines += ["", t("cli.show.tasks")]
                 for row in tasks:
                     parts = [row["text"]]
                     if row["assignee"]:
                         parts.append(f"({row['assignee']})")
                     if row["due"]:
-                        parts.append(f"— до {row['due']}")
+                        parts.append(t("export.task.due", due=row["due"]))
                     lines.append("  " + " ".join(parts))
 
             tags = storage.tags_of(id)
             if tags:
-                lines += ["", "Темы: " + ", ".join(tags)]
+                lines += ["", t("mcp.topics", topics=", ".join(tags))]
 
             participants = _participants(storage, id)
             if participants:
-                lines += ["", "Участники: " + ", ".join(participants)]
+                lines += ["", t("mcp.participants", names=", ".join(participants))]
 
             if with_utterances:
                 # Все реплики — ради честного «скрыто N»; наружу уходит
@@ -199,14 +213,14 @@ class UzelTools:
                 visible = [row for row in rows if not row.is_private]
                 hidden = len(rows) - len(visible)
                 if visible or hidden:
-                    lines += ["", "Реплики:"]
+                    lines += ["", t("cli.show.utterances")]
                     for row in visible:
                         lines.append(
                             f"  [{dt.datetime.fromtimestamp(row.started_at):%H:%M}]"
                             f" {row.text}"
                         )
                     if hidden:
-                        lines.append(f"  ({HIDDEN_NOTE.format(n=hidden)})")
+                        lines.append(f"  ({_hidden_note(hidden)})")
             return "\n".join(lines)
 
     def day(self, date: str | None = None) -> str:
@@ -217,9 +231,9 @@ class UzelTools:
         with Storage(self.settings.db_path) as storage:
             rows = storage.conversations_between(start, end)
             if not rows:
-                return f"За {day.isoformat()} разговоров нет."
+                return t("mcp.day.none", date=day.isoformat())
 
-            lines = [f"День {day.isoformat()}:"]
+            lines = [t("mcp.day.title", date=day.isoformat())]
             total_facts = total_tasks = total_utterances = 0
             for row in rows:
                 started = dt.datetime.fromtimestamp(row["started_at"])
@@ -231,8 +245,15 @@ class UzelTools:
                 total_tasks += tasks
                 total_utterances += utterances
                 lines.append(
-                    f"  #{row['id']} {started:%H:%M}–{ended:%H:%M}"
-                    f" статус: {row['status']}, фактов {facts}, задач {tasks}"
+                    t(
+                        "mcp.day.row",
+                        id=row["id"],
+                        start=f"{started:%H:%M}",
+                        end=f"{ended:%H:%M}",
+                        status=row["status"],
+                        facts=facts,
+                        tasks=tasks,
+                    )
                 )
                 if row["summary"]:
                     first = (row["summary"] or "").splitlines()[0]
@@ -241,8 +262,13 @@ class UzelTools:
 
             lines += [
                 "",
-                f"Итог дня: разговоров {len(rows)}, фактов {total_facts}, "
-                f"задач {total_tasks}, реплик {total_utterances}",
+                t(
+                    "mcp.day.total",
+                    conversations=len(rows),
+                    facts=total_facts,
+                    tasks=total_tasks,
+                    utterances=total_utterances,
+                ),
             ]
             return "\n".join(lines)
 
@@ -250,7 +276,7 @@ class UzelTools:
         """Факты за период: от начала суток ``date`` минус ``days - 1`` суток
         до конца суток ``date``."""
         if days < 1:
-            raise InvalidParams("days должен быть целым числом не меньше 1")
+            raise InvalidParams(t("mcp.err.days"))
 
         day = self._parse_day(date)
         _, end = self._day_bounds(day)
@@ -259,18 +285,21 @@ class UzelTools:
         with Storage(self.settings.db_path) as storage:
             rows = storage.facts_between(start, end, limit=limit)
             if not rows:
-                return "Фактов за период нет."
+                return t("mcp.facts.none")
 
             lines = []
             for row in rows:
                 stamp = (
-                    f"[{dt.datetime.fromtimestamp(row['said_at']):%d.%m %H:%M}] "
+                    "["
+                    + dt.datetime.fromtimestamp(row["said_at"]).strftime(
+                        t("format.day_month_time")
+                    )
+                    + "] "
                     if row["said_at"] is not None
                     else ""
                 )
-                lines.append(
-                    f"{stamp}{row['text']}  (разговор #{row['conversation_id']})"
-                )
+                source = t("mcp.facts.source", id=row["conversation_id"])
+                lines.append(f"{stamp}{row['text']}  {source}")
             return "\n".join(lines)
 
     def tasks(
@@ -278,7 +307,7 @@ class UzelTools:
     ) -> str:
         """Задачи: по статусу и, при заданном дне, только этого дня."""
         if status not in {"open", "done", "all"}:
-            raise InvalidParams("status должен быть одним из: open, done, all")
+            raise InvalidParams(t("mcp.err.status"))
 
         status_filter = None if status == "all" else status
         with Storage(self.settings.db_path) as storage:
@@ -291,7 +320,7 @@ class UzelTools:
                 rows = storage.tasks_between(status=status_filter, limit=limit)
 
             if not rows:
-                return "Задач нет."
+                return t("mcp.tasks.none")
 
             lines = []
             for row in rows:
@@ -300,13 +329,17 @@ class UzelTools:
                 if row["assignee"]:
                     parts.append(f"({row['assignee']})")
                 if row["due"]:
-                    parts.append(f"до {row['due']}")
+                    parts.append(t("mcp.tasks.due", due=row["due"]))
                 started = row["conversation_started_at"]
                 if row["conversation_id"] is not None and started is not None:
-                    stamp = dt.datetime.fromtimestamp(started).strftime("%d.%m %H:%M")
-                    parts.append(f"(разговор #{row['conversation_id']}, {stamp})")
+                    stamp = dt.datetime.fromtimestamp(started).strftime(
+                        t("format.day_month_time")
+                    )
+                    parts.append(
+                        t("mcp.tasks.source", id=row["conversation_id"], stamp=stamp)
+                    )
                 if row["exported_at"] is not None:
-                    parts.append("· выгружена в Obsidian")
+                    parts.append(t("mcp.tasks.exported"))
                 lines.append(" ".join(parts))
             return "\n".join(lines)
 
@@ -322,25 +355,18 @@ class UzelTools:
 
         queue_len = DiskQueue(settings.queue_dir).pending_count()
 
-        lines = [f"База: {settings.db_path} (схема {schema_version})"]
-        for key, title in (
-            ("conversations", "разговоров"),
-            ("utterances", "реплик"),
-            ("facts", "фактов"),
-            ("tasks", "задач"),
-            ("people", "людей"),
-            ("tags", "меток"),
-        ):
-            lines.append(f"  {title:12s} {counts[key]}")
-        lines.append(f"  {'ждут расшифровки':12s} {pending}")
-        lines.append(f"Очередь приёма: {queue_len} фрагментов")
+        lines = [t("mcp.stats.db", path=settings.db_path, schema=schema_version)]
+        for key in ("conversations", "utterances", "facts", "tasks", "people", "tags"):
+            lines.append(f"  {t(f'cli.stats.{key}'):12s} {counts[key]}")
+        lines.append(f"  {t('mcp.stats.pending'):12s} {pending}")
+        lines.append(t("cli.stats.queue", n=queue_len))
 
         try:
             from uzel.vector import build_index
 
-            lines.append(f"Смысловой индекс: {build_index(settings).count()} реплик")
+            lines.append(t("mcp.stats.index", n=build_index(settings).count()))
         except Exception as exc:
-            lines.append(f"Смысловой индекс: недоступен ({exc})")
+            lines.append(t("mcp.stats.index_down", error=exc))
         return "\n".join(lines)
 
     def privacy(self) -> str:
@@ -354,11 +380,10 @@ class UzelTools:
             if value is not None:
                 lines.append(f"{key}: {value}")
         if gate.windows:
-            lines.append(
-                "стоп-зоны: " + "; ".join(window.describe() for window in gate.windows)
-            )
+            windows = "; ".join(window.describe() for window in gate.windows)
+            lines.append(t("cli.privacy.windows", windows=windows))
 
-        lines += ["", "Куда уходят данные:"]
+        lines += ["", t("mcp.privacy.where")]
         cloud: list[str] = []
         # Облачность берётся у самого бэкенда, а не по списку известных имён:
         # на таком списке в P5 и прогорел агент-шлюз — локальный порт, облачный счёт.
@@ -366,22 +391,22 @@ class UzelTools:
             from uzel.stt.router import build_router
 
             for backend in build_router(self.settings).backends:
-                kind = "ОБЛАКО" if backend.is_cloud else "локально"
-                lines.append(f"  расшифровка: {backend.name} ({kind})")
+                kind = t("cli.llm.cloud") if backend.is_cloud else t("cli.llm.local")
+                lines.append(t("mcp.privacy.stt", name=backend.name, kind=kind))
                 if backend.is_cloud:
                     cloud.append(backend.name)
         except Exception as exc:
-            lines.append(f"  расшифровка: роутер не собрался ({exc})")
+            lines.append(t("mcp.privacy.stt_failed", error=exc))
         try:
             from uzel.llm import build_llm_router
 
             for backend in build_llm_router(self.settings).backends:
-                kind = "ОБЛАКО" if backend.is_cloud else "локально"
-                lines.append(f"  разбор: {backend.name} ({kind})")
+                kind = t("cli.llm.cloud") if backend.is_cloud else t("cli.llm.local")
+                lines.append(t("mcp.privacy.llm", name=backend.name, kind=kind))
                 if backend.is_cloud:
                     cloud.append(backend.name)
         except Exception as exc:
-            lines.append(f"  разбор: роутер не собрался ({exc})")
+            lines.append(t("mcp.privacy.llm_failed", error=exc))
         # P11.2, находка 13: из фактического состояния, а не константой.
         from uzel.privacy import cloud_policy_line
 

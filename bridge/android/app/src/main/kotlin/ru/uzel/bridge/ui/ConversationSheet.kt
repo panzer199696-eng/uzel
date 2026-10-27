@@ -32,9 +32,12 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.uzel.bridge.AppViewModel
+import ru.uzel.bridge.R
 
 /** Разговор целиком: сводка, задачи, факты и — по кнопке — расшифровка. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
@@ -43,6 +46,7 @@ fun ConversationSheet(vm: AppViewModel) {
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     val state = vm.detail
     val d = state.value
+    val res = LocalContext.current.resources
     ModalBottomSheet(onDismissRequest = vm::closeConversation, sheetState = sheet) {
         LazyColumn(
             contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 32.dp),
@@ -51,7 +55,7 @@ fun ConversationSheet(vm: AppViewModel) {
             if (d == null) {
                 item {
                     Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        if (state.loading) LoadingIndicator() else Text(state.error ?: "Не загрузилось")
+                        if (state.loading) LoadingIndicator() else Text(state.error ?: stringResource(R.string.not_loaded))
                     }
                 }
                 return@LazyColumn
@@ -64,7 +68,7 @@ fun ConversationSheet(vm: AppViewModel) {
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    "${c.duration} · ${c.utterances} реплик · ${statusLabel(c.status)}",
+                    stringResource(R.string.conv_meta, c.duration, c.utterances, statusLabel(res, c.status)),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -77,18 +81,18 @@ fun ConversationSheet(vm: AppViewModel) {
             }
             c.summary?.let { summary ->
                 item {
-                    SectionHeader("Сводка")
+                    SectionHeader(stringResource(R.string.section_summary))
                     Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                         Text(summary, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(16.dp))
                     }
                 }
             }
             if (d.tasks.isNotEmpty()) {
-                item { SectionHeader("Задачи", trailing = d.tasks.size.toString()) }
+                item { SectionHeader(stringResource(R.string.section_tasks), trailing = d.tasks.size.toString()) }
                 items(d.tasks, key = { "t" + it.id }) { TaskRow(it) {} }
             }
             if (d.facts.isNotEmpty()) {
-                item { SectionHeader("Факты", trailing = d.facts.size.toString()) }
+                item { SectionHeader(stringResource(R.string.section_facts), trailing = d.facts.size.toString()) }
                 items(d.facts, key = { "f" + it.id }) { FactRow(it) }
             }
             if (!vm.transcriptShown) {
@@ -97,11 +101,16 @@ fun ConversationSheet(vm: AppViewModel) {
                     FilledTonalButton(onClick = vm::showTranscript, shapes = ButtonDefaults.shapes(), modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Rounded.Subject, null)
                         Spacer(Modifier.size(8.dp))
-                        Text("Показать расшифровку")
+                        Text(stringResource(R.string.show_transcript))
                     }
                 }
             } else {
-                item { SectionHeader("Расшифровка", trailing = if (state.loading) "загрузка…" else null) }
+                item {
+                    SectionHeader(
+                        stringResource(R.string.section_transcript),
+                        trailing = if (state.loading) stringResource(R.string.loading) else null,
+                    )
+                }
                 items(d.transcript, key = { "u" + it.id }) { u ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                         Text(
@@ -117,7 +126,7 @@ fun ConversationSheet(vm: AppViewModel) {
                             Text(u.text, style = MaterialTheme.typography.bodyMedium)
                         }
                         if (u.isPrivate) {
-                            Icon(Icons.Rounded.Lock, "Приватное", tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Rounded.Lock, stringResource(R.string.private_mark), tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(16.dp))
                         }
                     }
                 }

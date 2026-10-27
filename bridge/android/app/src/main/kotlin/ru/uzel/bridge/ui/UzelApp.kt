@@ -48,18 +48,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import android.content.res.Resources
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import ru.uzel.bridge.AppViewModel
+import ru.uzel.bridge.R
 import ru.uzel.bridge.Tab
 
-private data class TabSpec(val tab: Tab, val title: String, val icon: ImageVector, val selectedIcon: ImageVector)
+private data class TabSpec(val tab: Tab, val title: Int, val icon: ImageVector, val selectedIcon: ImageVector)
 
 private val TABS = listOf(
-    TabSpec(Tab.HOME, "Кулон", Icons.Outlined.Sensors, Icons.Rounded.Sensors),
-    TabSpec(Tab.DAY, "День", Icons.Outlined.ViewDay, Icons.Rounded.ViewDay),
-    TabSpec(Tab.NOTES, "Заметки", Icons.Outlined.EditNote, Icons.Rounded.EditNote),
-    TabSpec(Tab.SEARCH, "Поиск", Icons.Outlined.Search, Icons.Rounded.Search),
+    TabSpec(Tab.HOME, R.string.tab_home, Icons.Outlined.Sensors, Icons.Rounded.Sensors),
+    TabSpec(Tab.DAY, R.string.tab_day, Icons.Outlined.ViewDay, Icons.Rounded.ViewDay),
+    TabSpec(Tab.NOTES, R.string.tab_notes, Icons.Outlined.EditNote, Icons.Rounded.EditNote),
+    TabSpec(Tab.SEARCH, R.string.tab_search, Icons.Outlined.Search, Icons.Rounded.Search),
 )
 
 /** Широкий экран — раскрытый Find N5 и вообще всё от 600 dp. */
@@ -71,6 +75,9 @@ fun isWide(): Boolean = LocalConfiguration.current.screenWidthDp >= 600
 fun UzelApp(vm: AppViewModel, onStart: () -> Unit, openIntent: (Intent) -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     val wide = isWide()
+    val res = LocalContext.current.resources
+    val deleted = stringResource(R.string.note_deleted)
+    val undo = stringResource(R.string.action_undo)
 
     LaunchedEffect(vm.message) {
         val text = vm.message ?: return@LaunchedEffect
@@ -79,7 +86,7 @@ fun UzelApp(vm: AppViewModel, onStart: () -> Unit, openIntent: (Intent) -> Unit)
     }
     LaunchedEffect(vm.lastDeleted) {
         if (vm.lastDeleted == null) return@LaunchedEffect
-        val r = snackbar.showSnackbar("Заметка удалена", actionLabel = "Вернуть", duration = SnackbarDuration.Short)
+        val r = snackbar.showSnackbar(deleted, actionLabel = undo, duration = SnackbarDuration.Short)
         if (r == SnackbarResult.ActionPerformed) vm.undoDelete()
     }
 
@@ -102,7 +109,7 @@ fun UzelApp(vm: AppViewModel, onStart: () -> Unit, openIntent: (Intent) -> Unit)
                         selected = vm.tab == spec.tab,
                         onClick = { vm.tab = spec.tab },
                         icon = { Icon(if (vm.tab == spec.tab) spec.selectedIcon else spec.icon, null) },
-                        label = { Text(spec.title) },
+                        label = { Text(stringResource(spec.title)) },
                     )
                 }
             }
@@ -115,11 +122,11 @@ fun UzelApp(vm: AppViewModel, onStart: () -> Unit, openIntent: (Intent) -> Unit)
             snackbarHost = { SnackbarHost(snackbar) },
             topBar = {
                 LargeFlexibleTopAppBar(
-                    title = { Text(TABS.first { it.tab == vm.tab }.title) },
-                    subtitle = { Text(subtitleFor(vm)) },
+                    title = { Text(stringResource(TABS.first { it.tab == vm.tab }.title)) },
+                    subtitle = { Text(subtitleFor(res, vm)) },
                     actions = {
                         IconButton(onClick = { vm.showSettings = true }) {
-                            Icon(Icons.Outlined.Settings, contentDescription = "Настройки")
+                            Icon(Icons.Outlined.Settings, contentDescription = stringResource(R.string.settings))
                         }
                     },
                     scrollBehavior = scroll,
@@ -137,7 +144,7 @@ fun UzelApp(vm: AppViewModel, onStart: () -> Unit, openIntent: (Intent) -> Unit)
                                 selected = vm.tab == spec.tab,
                                 onClick = { vm.tab = spec.tab },
                                 icon = { Icon(if (vm.tab == spec.tab) spec.selectedIcon else spec.icon, null) },
-                                label = { Text(spec.title) },
+                                label = { Text(stringResource(spec.title)) },
                             )
                         }
                     }
@@ -168,18 +175,18 @@ fun UzelApp(vm: AppViewModel, onStart: () -> Unit, openIntent: (Intent) -> Unit)
     if (vm.openedId != null) ConversationSheet(vm)
 }
 
-private fun subtitleFor(vm: AppViewModel): String = when (vm.tab) {
+private fun subtitleFor(res: Resources, vm: AppViewModel): String = when (vm.tab) {
     Tab.HOME -> when {
-        !vm.bridgeWanted -> "мост выключен"
-        vm.snapshot.connected -> "кулон на связи"
-        else -> "ищу кулон"
+        !vm.bridgeWanted -> res.getString(R.string.sub_bridge_off)
+        vm.snapshot.connected -> res.getString(R.string.state_connected)
+        else -> res.getString(R.string.state_disconnected)
     }
     Tab.DAY -> vm.day.value?.let {
-        plural(it.conversations.size, "разговор", "разговора", "разговоров") + " · " + it.speech + " речи"
-    } ?: "загрузка…"
-    Tab.NOTES -> notesCount(vm.notes.size)
-    Tab.SEARCH -> "по всей памяти ядра"
+        res.getString(R.string.sub_day, res.count(R.plurals.conversations, it.conversations.size), it.speech)
+    } ?: res.getString(R.string.loading)
+    Tab.NOTES -> notesCount(res, vm.notes.size)
+    Tab.SEARCH -> res.getString(R.string.sub_search)
 }
 
-private fun notesCount(n: Int): String =
-    if (n == 0) "пока пусто" else plural(n, "заметка", "заметки", "заметок")
+private fun notesCount(res: Resources, n: Int): String =
+    if (n == 0) res.getString(R.string.notes_empty_sub) else res.count(R.plurals.notes, n)

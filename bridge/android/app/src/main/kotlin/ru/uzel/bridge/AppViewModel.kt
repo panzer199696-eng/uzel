@@ -21,6 +21,7 @@ import ru.uzel.bridge.core.CoreApi
 import ru.uzel.bridge.core.CoreClient
 import ru.uzel.bridge.core.CoreStatus
 import ru.uzel.bridge.core.DayFeed
+import ru.uzel.bridge.core.FailReason
 import ru.uzel.bridge.core.Note
 import ru.uzel.bridge.core.PrivacyState
 import ru.uzel.bridge.core.SearchResult
@@ -100,6 +101,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun api() = CoreApi(prefs.coreUrl, prefs.apiToken)
 
+    /** Причина отказа ядра — на языке телефона. */
+    private fun ApiResult.Fail.text(): String = when (reason) {
+        FailReason.UNAUTHORIZED -> ctx.getString(R.string.api_unauthorized)
+        FailReason.NOT_FOUND -> ctx.getString(R.string.api_not_found)
+        FailReason.HTTP_ERROR -> ctx.getString(R.string.api_http, code ?: 0)
+        FailReason.OFFLINE -> ctx.getString(R.string.api_offline)
+        FailReason.BAD_RESPONSE -> ctx.getString(R.string.api_bad_response)
+    }
+
     /** Экран на виду: опрашиваем снимок службы и ядро. */
     fun onResume() {
         bridgeWanted = prefs.autoStart
@@ -133,7 +143,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         try {
             RecorderService.start(ctx)
         } catch (e: Exception) {
-            message = "Android не дал запустить мост: ${e.message}"
+            message = ctx.getString(R.string.bridge_start_failed, e.message ?: "")
         }
     }
 
@@ -155,7 +165,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     coreStatus = r.value
                     privacy = r.value.privacy ?: privacy
                 }
-                is ApiResult.Fail -> if (r.code == 401) message = r.message
+                is ApiResult.Fail -> if (r.code == 401) message = r.text()
             }
         }
     }
@@ -171,7 +181,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             when (val r = withContext(Dispatchers.IO) { call(api()) }) {
                 is ApiResult.Ok -> privacy = r.value
-                is ApiResult.Fail -> message = r.message
+                is ApiResult.Fail -> message = r.text()
             }
             privacyBusy = false
         }
@@ -205,7 +215,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     dayCache[target] = r.value
                     Loadable(r.value)
                 }
-                is ApiResult.Fail -> Loadable(cached, error = r.message)
+                is ApiResult.Fail -> Loadable(cached, error = r.text())
             }
             if (force) linkMoments()
         }
@@ -237,7 +247,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (openedId != id) return@launch
             detail = when (r) {
                 is ApiResult.Ok -> Loadable(r.value)
-                is ApiResult.Fail -> Loadable(error = r.message)
+                is ApiResult.Fail -> Loadable(error = r.text())
             }
         }
     }
@@ -258,7 +268,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addMoment(text: String = "") {
         notesIo { ctx.addMoment(text) }
-        message = "Метка поставлена"
+        message = ctx.getString(R.string.moment_saved)
     }
 
     fun editNote(id: Long, text: String) = notesIo { it.update(id) { n -> n.copy(text = text.trim()) } }
@@ -320,7 +330,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val r = withContext(Dispatchers.IO) { api().search(q) }
             search = when (r) {
                 is ApiResult.Ok -> Loadable(r.value)
-                is ApiResult.Fail -> Loadable(error = r.message)
+                is ApiResult.Fail -> Loadable(error = r.text())
             }
         }
     }
@@ -369,7 +379,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun updateFirmware(zip: android.net.Uri) {
         val address = prefs.pendantAddress
         if (address == null) {
-            message = "Кулон ещё ни разу не подключался к мосту — адрес неизвестен"
+            message = ctx.getString(R.string.pendant_unknown)
             return
         }
         if (firmwareBusy) return
@@ -389,7 +399,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 update.start(address, zip)
             } catch (e: Exception) {
-                firmwareState = "не запустилось: ${e.message}"
+                firmwareState = ctx.getString(R.string.fw_not_started, e.message ?: "")
                 update.onFinished?.invoke()
             }
         }

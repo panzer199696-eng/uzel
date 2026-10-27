@@ -16,6 +16,8 @@ import signal
 import sys
 from pathlib import Path
 
+from uzel.i18n import t
+
 from .ble import OmiBleSource, discover
 from .pipeline import AudioPipeline
 from .spool import CoreClient, Spool, Uploader
@@ -44,18 +46,14 @@ def _setup_logging(level: str) -> None:
 
 
 async def cmd_scan(args) -> int:
-    print("Ищу кулоны в эфире…")
+    print(t("bridge.scanning"))
     devices = await discover(args.scan_timeout)
     if not devices:
-        print(
-            "Ничего не найдено.\n"
-            "Если кулон подключён к телефону — отвяжите его: при активном\n"
-            "соединении BLE-реклама прекращается и с ПК устройство не видно."
-        )
+        print(t("bridge.scan_empty"))
         return 1
     for device in devices:
         rssi = f"{device.rssi} dBm" if device.rssi is not None else "?"
-        print(f"  {device.address}  {device.name or 'без имени':20s}  {rssi}")
+        print(f"  {device.address}  {device.name or t('bridge.no_name'):20s}  {rssi}")
     return 0
 
 
@@ -64,7 +62,7 @@ async def _resolve(args) -> str | None:
         return args.address
     devices = await discover(args.scan_timeout)
     if not devices:
-        print("Кулон не найден в эфире (если он подключён к телефону или мосту — отключите).")
+        print(t("bridge.not_found"))
         return None
     return devices[0].address
 
@@ -82,11 +80,12 @@ async def cmd_stats(args) -> int:
     async with BleakClient(address) as client:
         await ensure_paired(client)
         rev = await client.read_gatt_char(DIS_FIRMWARE_REV_UUID)
-        print(f"кулон {address}, прошивка {bytes(rev).decode(errors='replace')}")
+        revision = bytes(rev).decode(errors="replace")
+        print(t("bridge.stats.header", address=address, revision=revision))
         try:
             stats = parse_stats(await client.read_gatt_char(UZEL_STATS_UUID))
         except Exception as exc:
-            print(f"статистики нет ({exc}): прошивка не УЗЛА или нет сопряжения")
+            print(t("bridge.stats.none", error=exc))
             return 1
     for key, value in stats.items():
         print(f"  {key:28s} {value}")
@@ -106,15 +105,15 @@ async def cmd_dfu(args) -> int:
     def progress(done: int, total: int) -> None:
         percent = done * 100 // total
         if percent // 5 != last[0] // 5:
-            print(f"  {percent:3d} %  ({done} из {total} байт)", flush=True)
+            print(t("bridge.dfu.progress", percent=percent, done=done, total=total), flush=True)
             last[0] = percent
 
     try:
         await update_firmware(Path(args.dfu), address, progress=progress)
     except DfuError as exc:
-        print(f"Обновление не удалось: {exc}")
+        print(t("bridge.dfu.failed", error=exc))
         return 1
-    print("Готово.")
+    print(t("bridge.done"))
     return 0
 
 
@@ -183,30 +182,30 @@ async def cmd_run(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="uzel-bridge", description="Мост кулон → ядро УЗЕЛ"
+        prog="uzel-bridge", description=t("bridge.description")
     )
     parser.add_argument(
-        "--scan", action="store_true", help="только найти кулон в эфире"
+        "--scan", action="store_true", help=t("bridge.help.scan")
     )
     parser.add_argument(
-        "--stats", action="store_true", help="счётчики прошивки УЗЛА на кулоне"
+        "--stats", action="store_true", help=t("bridge.help.stats")
     )
     parser.add_argument(
         "--dfu",
         metavar="HEX",
-        help="обновить прошивку по воздуху из .hex (firmware/out/uzel-fw-*.hex)",
+        help=t("bridge.help.dfu"),
     )
-    parser.add_argument("--address", help="MAC кулона; без него — поиск в эфире")
-    parser.add_argument("--uid", default="pendant-1", help="идентификатор устройства")
+    parser.add_argument("--address", help=t("bridge.help.address"))
+    parser.add_argument("--uid", default="pendant-1", help=t("bridge.help.uid"))
     parser.add_argument(
-        "--core-url", default="http://127.0.0.1:8770", help="адрес ядра"
+        "--core-url", default="http://127.0.0.1:8770", help=t("bridge.help.core_url")
     )
     parser.add_argument("--source", default="bridge-pc")
     parser.add_argument("--sample-rate", type=int, default=16000)
     parser.add_argument(
         "--spool-dir",
         default=str(default_spool_dir()),
-        help="буфер неотправленного звука (по умолчанию рядом с данными ядра)",
+        help=t("bridge.help.spool"),
     )
     parser.add_argument("--flush-seconds", type=float, default=5.0)
     parser.add_argument("--report-seconds", type=float, default=30.0)
@@ -215,7 +214,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--reconnect-max",
         type=float,
         default=60.0,
-        help="предел паузы между попытками, с (кулон выключают руками — трей ставит 10)",
+        help=t("bridge.help.reconnect"),
     )
     parser.add_argument("--log-level", default="INFO")
     return parser

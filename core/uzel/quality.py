@@ -7,28 +7,32 @@ LLM-судья «стоит ли это помнить» здесь сознат
 
 Пороги — гипотезы до калибровки на реальном материале: сними сводку
 ``uzel quality-report`` и подгоняй ``quality_*`` в настройках.
+
+Правила общие для всех языков; от языка зависят только стоп-фразы B3 (каталоги
+``locales``, все языки сразу) и ожидаемый язык B4. Пояснения к отказам —
+на языке интерфейса.
 """
 
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 
+from .i18n import t
 from .stt.postprocess import normalise, strip_hallucination
 
 REASONS: tuple[str, ...] = (
     "empty", "too_short", "hallucination", "lang_noise",
     "too_sparse", "too_dense", "looped", "duplicate",
 )
-REASON_TITLES: dict[str, str] = {
-    "empty":         "пусто",
-    "too_short":     "слишком коротко",
-    "hallucination": "субтитровая галлюцинация",
-    "lang_noise":    "не тот язык",
-    "too_sparse":    "разреженно",
-    "too_dense":     "слишком плотно",
-    "looped":        "зацикливание",
-    "duplicate":     "дубль подряд",
-}
+
+
+def reason_title(code: str, *, lang: str | None = None) -> str:
+    """Название правила для человека; неизвестный код — как есть."""
+    key = f"quality.reason.{code}"
+    title = t(key, lang=lang)
+    return code if title == key else title
 
 
 @dataclass(frozen=True)
@@ -101,12 +105,16 @@ def check_utterance(
     *,
     speech_seconds: float = 0.0,
     language: str | None = None,
-    expected_language: str = "ru",
+    expected_language: str | None = "ru",
     previous_text: str | None = None,
     gap_seconds: float | None = None,
     thresholds: Thresholds | None = None,
 ) -> Verdict:
-    """Проверяет реплику правилами B1–B8 по порядку, от дешёвого к дорогому."""
+    """Проверяет реплику правилами B1–B8 по порядку, от дешёвого к дорогому.
+
+    ``expected_language=None`` выключает B4: при ``UZEL_STT_LANGUAGE=auto``
+    язык разговора бывает неизвестен, а «не знаю» — не повод выкидывать.
+    """
     th = thresholds if thresholds is not None else Thresholds()
 
     # B1: пусто — None, пустая строка или одни пробелы.
@@ -119,7 +127,11 @@ def check_utterance(
     # B2: слишком коротко — «И» по символам, и по словам, а не «ИЛИ»:
     # короткая, но многословная реплика («да, согласен, подпишем») проходит.
     if len(stripped) < th.min_chars and len(words) < th.min_words:
-        return Verdict(False, "too_short", f"{len(stripped)} симв, {len(words)} слов")
+        return Verdict(
+            False,
+            "too_short",
+            t("quality.detail.too_short", chars=len(stripped), words=len(words)),
+        )
 
     # B3: субтитровая галлюцинация — стоп-лист переиспользуется из STT.
     _, phrase = strip_hallucination(text)
@@ -129,6 +141,7 @@ def check_utterance(
     # B4: не тот язык. Язык неизвестен — не повод выкидывать.
     if (
         language is not None
+        and expected_language is not None
         and _short_code(language) != _short_code(expected_language)
         and len(stripped) < th.lang_min_chars
     ):
@@ -141,9 +154,13 @@ def check_utterance(
             speech_seconds >= th.sparse_min_speech_s
             and density < th.min_chars_per_second
         ):
-            return Verdict(False, "too_sparse", f"{density:.1f} симв/с")
+            return Verdict(
+                False, "too_sparse", t("quality.detail.density", density=f"{density:.1f}")
+            )
         if density > th.max_chars_per_second:
-            return Verdict(False, "too_dense", f"{density:.1f} симв/с")
+            return Verdict(
+                False, "too_dense", t("quality.detail.density", density=f"{density:.1f}")
+            )
 
     # B7: зацикливание.
     loop_detail = _detect_loop(words, th)
@@ -157,7 +174,9 @@ def check_utterance(
         and normalise(text) == normalise(previous_text)
         and gap_seconds < th.duplicate_gap_s
     ):
-        return Verdict(False, "duplicate", f"повтор через {gap_seconds:.0f} с")
+        return Verdict(
+            False, "duplicate", t("quality.detail.duplicate", gap=f"{gap_seconds:.0f}")
+        )
 
     return Verdict(True)
 
@@ -165,6 +184,21 @@ def check_utterance(
 def _short_code(language: str) -> str:
     """Код языка до первых двух букв: «RU», «ru-RU» и «ru» — одно и то же."""
     return language.strip().lower()[:2]
+
+
+def dominant_language(rows: Iterable[tuple[str | None, str | None]]) -> str | None:
+    """Язык разговора по репликам ``(язык, текст)``: больше всего символов.
+
+    Нужен B4 при ``UZEL_STT_LANGUAGE=auto``: ожидаемым языком становится язык
+    самого разговора, а не настройка. Реплики без языка не голосуют.
+    """
+    weights: Counter[str] = Counter()
+    for language, text in rows:
+        if language and text:
+            weights[_short_code(language)] += len(text.strip())
+    if not weights:
+        return None
+    return weights.most_common(1)[0][0]
 
 
 def _detect_loop(words: list[str], th: Thresholds) -> str | None:
@@ -187,12 +221,12 @@ def _detect_loop(words: list[str], th: Thresholds) -> str | None:
                 repeats += 1
                 position += size
             if repeats >= th.loop_ngram_repeats:
-                return f"«{' '.join(block)}» повторён {repeats} раз подряд"
+                return t("quality.detail.loop", block=" ".join(block), repeats=repeats)
 
     if total > th.loop_min_words:
         ratio = len(set(words)) / total
         if ratio < th.unique_word_ratio:
-            return f"уникальных слов {ratio:.2f} из {total}"
+            return t("quality.detail.unique", ratio=f"{ratio:.2f}", total=total)
 
     return None
 
@@ -204,7 +238,7 @@ class QualityFilter:
         self,
         thresholds: Thresholds | None = None,
         *,
-        expected_language: str = "ru",
+        expected_language: str | None = "ru",
     ) -> None:
         self._thresholds = thresholds if thresholds is not None else Thresholds()
         self._expected_language = expected_language
@@ -262,15 +296,33 @@ def check_conversation(
 
     if accepted < th.conversation_min_utterances:
         return ConversationVerdict(
-            "thin", "thin", f"принятых реплик {accepted} < {th.conversation_min_utterances}"
+            "thin",
+            "thin",
+            t(
+                "quality.detail.conv_utterances",
+                accepted=accepted,
+                minimum=th.conversation_min_utterances,
+            ),
         )
     if accepted_chars < th.conversation_min_chars:
         return ConversationVerdict(
-            "thin", "thin", f"символов {accepted_chars} < {th.conversation_min_chars}"
+            "thin",
+            "thin",
+            t(
+                "quality.detail.conv_chars",
+                chars=accepted_chars,
+                minimum=th.conversation_min_chars,
+            ),
         )
     if speech_seconds < th.conversation_min_speech_s:
         return ConversationVerdict(
-            "thin", "thin", f"речи {speech_seconds:.0f} с < {th.conversation_min_speech_s:.0f} с"
+            "thin",
+            "thin",
+            t(
+                "quality.detail.conv_speech",
+                speech=f"{speech_seconds:.0f}",
+                minimum=f"{th.conversation_min_speech_s:.0f}",
+            ),
         )
 
     total = accepted + rejected
@@ -280,7 +332,7 @@ def check_conversation(
         and accepted < th.conversation_noise_max_accepted
     ):
         return ConversationVerdict(
-            "noise", "noise", f"доля отклонённых {noise_ratio:.2f}"
+            "noise", "noise", t("quality.detail.conv_noise", ratio=f"{noise_ratio:.2f}")
         )
 
     return ConversationVerdict("ok")

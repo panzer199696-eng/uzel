@@ -23,6 +23,7 @@ from pathlib import Path
 
 import numpy as np
 
+from . import i18n
 from . import privacy as privacy_policy
 from . import segments
 from .audio import PCM_ENCODING, pcm16_to_float32, read_wav, write_wav
@@ -34,19 +35,34 @@ from .export.obsidian import (
     write_day_note,
     write_transcript_note,
 )
+from .i18n import t
 from .llm import LlmLocalFused, LlmRouter
 from .nlu import NluError, NluProcessor, store_result
 from .opus_stream import OPUS_FRAMES_ENCODING, unpack_frames
 from .privacy import PrivacyGate, build_gate
-from .quality import QualityFilter, Thresholds, check_conversation
+from .quality import QualityFilter, Thresholds, check_conversation, dominant_language
 from .queue import Chunk, DiskQueue
 from .segments import group_conversations, merge_utterances, shift
 from .storage import Storage
 from .stt.base import LocalBackendFused, TranscriptionError
+from .stt.language import LanguagePicker, whisper_language
 from .vad import detect_speech
 from .vector import NullIndex
 
 log = logging.getLogger(__name__)
+
+
+def person_from_tag(tag: str) -> str | None:
+    """Имя из метки «человек:Имя» на любом языке каталогов; не метка человека — None.
+
+    Метки пишутся на языке интерфейса, а язык могли сменить: заметка дня
+    обязана узнавать и старые «человек:», и новые «person:».
+    """
+    for template in i18n.data_all("tags.person"):
+        prefix = template.split("{", 1)[0]
+        if prefix and tag.startswith(prefix):
+            return tag[len(prefix) :]
+    return None
 
 
 class UndecodableChunk(ValueError):
@@ -628,6 +644,14 @@ class Worker:
     ) -> None:
         settings = self.settings
         fused = False
+        # Язык распознавания на весь прогон: при auto короткие реплики берут
+        # язык уверенно распознанных длинных (stt/language.py).
+        picker = LanguagePicker(
+            settings.stt_language,
+            seed=self.storage.recent_language()
+            if whisper_language(settings.stt_language) is None
+            else None,
+        )
         while True:
             # Стоп-файл и лимит времени проверяются МЕЖДУ пачками:
             # начатая пачка доводится до конца.
@@ -644,16 +668,21 @@ class Worker:
 
             router = self._ensure_stt()
             progressed = False  # расшифрована ли хоть одна реплика пачки
+            if picker.auto:
+                # Длинные вперёд: их язык достанется коротким этой же пачки.
+                # Сортировка устойчивая — при равной длине свежие по-прежнему первыми.
+                rows = sorted(rows, key=lambda item: -(item.speech_seconds or 0.0))
             for row in rows:
                 samples = self._load_utterance_audio(row, stats)
                 if samples is None:
                     continue
                 try:
                     # Приватная реплика не уходит в облако никогда (FR-072).
+                    seconds = len(samples) / float(settings.sample_rate)
                     result = router.transcribe(
                         samples,
                         settings.sample_rate,
-                        language=settings.stt_language,
+                        language=picker.choose(seconds),
                         allow_cloud=allow_cloud and not row.is_private,
                     )
                 except LocalBackendFused:
@@ -672,6 +701,11 @@ class Worker:
                     text=result.text,
                     language=result.language,
                     backend=result.backend,
+                )
+                picker.observe(
+                    result.language,
+                    probability=(result.raw or {}).get("language_probability"),
+                    seconds=seconds,
                 )
                 stats.transcribed += 1
                 progressed = True
@@ -815,9 +849,13 @@ class Worker:
         # Фильтр новый на каждый разговор: правило B8 «дубль подряд» работает
         # только на хронологии, поэтому качество считается здесь, а не на
         # такте 1, где порядок расшифровки обратный.
-        utterance_filter = QualityFilter(
-            thresholds, expected_language=settings.stt_language
-        )
+        # B4 «не тот язык»: при auto ожидаемый язык — язык самого разговора.
+        expected = whisper_language(settings.stt_language)
+        if expected is None:
+            expected = dominant_language(
+                (row.language, row.text) for row in rows if not row.reject_reason
+            )
+        utterance_filter = QualityFilter(thresholds, expected_language=expected)
         utterance_filter.reset()
         accepted_rows = []
         accepted = rejected = accepted_chars = 0
@@ -893,13 +931,13 @@ class Worker:
 
         store_result(self.storage, cid, result, time_map=time_map)
         if result.kind:
-            self.storage.add_tag(f"вид:{result.kind}", conversation_id=cid)
+            self.storage.add_tag(t("tags.kind", kind=result.kind), conversation_id=cid)
         for topic in result.topics:
             self.storage.add_tag(topic, conversation_id=cid)
         # Незнакомые имена не пишутся: [[Имя]] без заметки — битая ссылка в графе.
         for name in result.people:
             if self.storage.find_person(name) is not None:
-                self.storage.add_tag(f"человек:{name}", conversation_id=cid)
+                self.storage.add_tag(t("tags.person", name=name), conversation_id=cid)
         stats.analysed += 1
 
     def _export(
@@ -1013,8 +1051,8 @@ class Worker:
             topics: list[str] = []
             people: list[str] = []
             for tag in self.storage.tags_of(cid):
-                if tag.startswith("человек:"):
-                    name = tag[len("человек:") :]
+                name = person_from_tag(tag)
+                if name is not None:
                     if name and name not in people:
                         people.append(name)
                 elif tag not in topics:
