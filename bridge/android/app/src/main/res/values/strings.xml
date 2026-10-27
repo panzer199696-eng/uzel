@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">УЗЕЛ</string>
+
+    <string name="status_no_permission">Без доступа к Bluetooth мост не запустить</string>
+    <string name="settings_not_found">Не нашёл нужный экран настроек</string>
+
+    <!-- Служба и уведомление. -->
+    <string name="notification_channel">Мост работает (тихо)</string>
+    <string name="notification_title">УЗЕЛ слушает кулон</string>
+    <string name="state_connected">кулон на связи</string>
+    <string name="state_disconnected">ищу кулон</string>
+
+    <!-- Плитки и ярлыки. -->
+    <string name="tile_moment">Метка</string>
+    <string name="tile_bridge">УЗЕЛ</string>
+    <string name="tile_on">слушает</string>
+    <string name="tile_off">выключен</string>
+    <string name="moment_saved">Метка поставлена</string>
+    <string name="open_app_to_start">Откройте УЗЕЛ, чтобы включить мост</string>
+    <string name="shortcut_moment">Метка момента</string>
+</resources>

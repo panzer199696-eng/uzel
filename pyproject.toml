@@ -1,0 +1,38 @@
+# P12, 24.09.2026: пакет ставится в .venv в режиме разработки —
+#   .venv\Scripts\python.exe -m pip install -e . --no-deps
+# После этого `uzel`, `uzel-bridge`, `uzel-mcp` и `python -m uzel.cli` работают
+# без PYTHONPATH. Только editable: config.py ищет .env и ассеты от __file__,
+# обычная установка в site-packages увела бы их из проекта.
+# --no-deps — версии зависимостей держит requirements.lock.txt, а не pip-резолвер.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uzel"
+version = "0.9.0"
+description = "УЗЕЛ — локальный AI-кулон: приём звука, расшифровка, разбор, выгрузка"
+requires-python = ">=3.12"
+dynamic = ["dependencies"]
+
+[project.scripts]
+uzel = "uzel.cli:main"
+uzel-bridge = "uzel_bridge.cli:main"
+uzel-mcp = "uzel_mcp.server:main"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+where = ["core", "bridge", "integrations/mcp"]
+include = ["uzel*", "uzel_bridge*", "uzel_mcp*"]
+
+[tool.setuptools.package-data]
+"uzel" = ["models/*.onnx", "ui/static/*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["core", "bridge", "integrations/mcp"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]

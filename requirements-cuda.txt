@@ -1,0 +1,18 @@
+# Ускорение расшифровки на видеокарте NVIDIA. Ставится ОТДЕЛЬНО:
+#
+#   .venv\Scripts\pip install -r requirements-cuda.txt
+#
+# Зачем отдельный файл: это ~2 ГБ, и на машине без карты NVIDIA они бесполезны.
+# Без них всё работает, но faster-whisper считает на процессоре — в разы дольше.
+#
+# Почему это вообще нужно ставить руками: ctranslate2 (движок faster-whisper)
+# НЕ объявляет их зависимостью, но при device="cuda" ищет cublas64_12.dll и
+# cudnn*.dll по PATH процесса. Код добавляет site-packages/nvidia/*/bin в PATH
+# сам (core/uzel/stt/local_backend.py:52) — но добавлять нечего, если колёс нет.
+# os.add_dll_directory() здесь не помогает, проверено.
+#
+# Версии под ctranslate2 4.8.x (CUDA 12). Драйвер NVIDIA нужен свой, системный.
+
+nvidia-cublas-cu12==12.9.2.10
+nvidia-cuda-nvrtc-cu12==12.9.86
+nvidia-cudnn-cu12==9.24.0.43

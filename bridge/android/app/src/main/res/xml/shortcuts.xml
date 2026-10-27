@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_moment"
+        android:shortcutId="moment"
+        android:shortcutShortLabel="@string/shortcut_moment">
+        <intent
+            android:action="ru.uzel.bridge.action.MOMENT"
+            android:targetClass="ru.uzel.bridge.MainActivity"
+            android:targetPackage="ru.uzel.bridge" />
+    </shortcut>
+</shortcuts>

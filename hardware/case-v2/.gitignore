@@ -1,0 +1,13 @@
+# Сгенерированное build_v2.py / render_v2.py — пересобирается за ~10 с, в git не держим (сотни МБ сеток)
+out/*
+!out/cover_T.npy
+!out/hm_base.npy
+!out/build_report.json
+
+# рендеры: в git только итоговые виды текущей версии
+renders/*
+!renders/v2_iso_front.png
+!renders/v2_iso_back.png
+!renders/v2_exploded.png
+!renders/v2_clip_out.png
+!renders/v2_clip_section.png

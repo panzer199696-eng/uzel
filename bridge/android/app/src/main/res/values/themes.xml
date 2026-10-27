@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Окно до первого кадра Compose: фон в тон теме, без системной шапки. -->
+    <style name="Theme.Uzel" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_bg</item>
+    </style>
+    <color name="window_bg">#FFFAFDFC</color>
+    <color name="ic_bg">#FF00585A</color>
+</resources>

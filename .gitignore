@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
+!.env.example
+*.sqlite
+*.db
+data/
+qdrant_db/
+node_modules/
+build/
+*.wav
+*.opus
+!tests/wer/*.wav
+!tests/fixtures/*.wav
+.DS_Store
+ops/STOP
+ops/logs/
+ops/журнал.jsonl
+.playwright-mcp/
+ops/лог-*.txt
+*.egg-info/
+
+# живые логи боевого дня (MAC кулона, ошибки моста) — не в git
+ops/боевой-день/

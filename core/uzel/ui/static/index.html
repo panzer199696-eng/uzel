@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>УЗЕЛ — Голос в заметки</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/ui/static/style.css?v={ВЕРСИЯ}&ui=20261013-1">
+</head>
+<body>
+  <div class="page">
+    <header class="top">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 40 40" fill="none" aria-hidden="true"><rect width="40" height="40" rx="12" fill="#e5eee7"/><path d="M12 14v10a5 5 0 0 0 10 0V14a3 3 0 0 1 6 0v12M12 20h16" stroke="#3a6550" stroke-width="2.5" stroke-linecap="round"/></svg>
+        <div><h1>УЗЕЛ</h1><p>Голос в заметки</p></div>
+      </div>
+      <span class="local-badge"><span aria-hidden="true"></span>На этом ПК</span>
+    </header>
+    <main>
+      <section class="status panel" aria-labelledby="status-heading">
+        <div class="eyebrow" id="status-heading">Связь и запись</div>
+        <div id="recording" class="plate plate-unknown" role="status" aria-live="polite">Проверяем состояние…</div>
+        <div class="status-grid">
+          <div class="status-card"><h3>Кулон</h3><div id="device" class="card-value">Проверяем связь…</div></div>
+          <div class="status-card"><h3>Режим записи</h3><div id="permission" class="card-value">Проверяем…</div></div>
+          <div class="status-card"><h3>Обработка</h3><div id="queue" class="card-value">Проверяем очередь…</div></div>
+        </div>
+        <div class="buttons">
+          <button id="btn-mute" type="button" disabled>Пауза на 30 минут</button>
+          <button id="btn-pause" type="button" disabled>Выключить запись</button>
+          <button id="btn-resume" class="button-primary" type="button" disabled>Возобновить запись</button>
+        </div>
+        <p class="control-note">Пауза закончится автоматически. После выключения запись нужно возобновить вручную.</p>
+        <p id="action-message" class="action-message" role="status" aria-live="polite"></p>
+      </section>
+      <div class="workspace-grid">
+        <section class="day panel" aria-labelledby="day-heading">
+          <div class="section-header"><div><div class="eyebrow">Ваш день</div><h2 id="day-heading">Разговоры за день</h2></div></div>
+          <div class="day-toolbar">
+            <div class="date-field"><label for="day-date">Дата</label><input type="date" id="day-date"></div>
+            <div class="day-nav">
+              <button id="day-prev" class="button-icon" type="button" aria-label="Предыдущий день" title="Предыдущий день">‹</button>
+              <button id="day-today" type="button">Сегодня</button>
+              <button id="day-next" class="button-icon" type="button" aria-label="Следующий день" title="Следующий день">›</button>
+            </div>
+          </div>
+          <div id="day-summary" class="day-summary" role="status" aria-live="polite">Загружаем сводку…</div>
+          <div id="day-feed" aria-busy="true"><div class="empty-state">Загружаем разговоры…</div></div>
+        </section>
+        <aside class="side-column">
+          <section class="tasks panel" aria-labelledby="tasks-heading">
+            <div class="section-header"><div><div class="eyebrow">Из разговоров</div><h2 id="tasks-heading">Задачи за день</h2></div><span id="tasks-count" class="count-badge">—</span></div>
+            <div id="day-tasks" aria-live="polite" aria-busy="true"><div class="empty-state">Загружаем задачи…</div></div>
+          </section>
+          <section class="search panel" aria-labelledby="search-heading">
+            <div class="section-header"><div><div class="eyebrow">Найти важное</div><h2 id="search-heading">Поиск по разговорам</h2></div></div>
+            <form id="search-form">
+              <label for="search-q">Что найти</label>
+              <div class="search-controls"><input type="search" id="search-q" placeholder="Слово, тема или фраза" autocomplete="off"><button type="submit">Найти</button></div>
+            </form>
+            <p id="search-note" class="search-note" role="status" aria-live="polite">Поиск по сохранённым разговорам.</p>
+            <div id="search-results" aria-busy="false"></div>
+          </section>
+        </aside>
+      </div>
+      <details class="diagnostics panel">
+        <summary><span>Диагностика и качество</span><span class="summary-hint">Технические сведения</span></summary>
+        <div class="diagnostics-content">
+          <div class="diagnostics-grid">
+            <div><h3>Программа</h3><p id="version">Версия неизвестна</p></div>
+            <div><h3>База заметок</h3><p id="db">Проверяем…</p></div>
+            <div><h3>Окна без записи</h3><p id="windows">Проверяем…</p></div>
+            <div><h3>Расшифровка</h3><p id="worker">Проверяем…</p><p class="muted">Расшифровка выполняется отдельно. Запуск вручную — «Расшифровать сейчас» в меню значка программы в трее.</p></div>
+          </div>
+          <div class="quality"><h3>Качество за выбранный день</h3><p class="muted">Статистика относится к уже обработанным репликам. Фильтр помогает отмечать сомнительные фрагменты и не показывает состояние связи с кулоном.</p><div id="quality-body" aria-live="polite">Загружаем статистику…</div></div>
+        </div>
+      </details>
+    </main>
+    <footer>УЗЕЛ <span aria-hidden="true">·</span> Голос, который становится заметкой</footer>
+  </div>
+  <script src="/ui/static/app.js?v={ВЕРСИЯ}&ui=20261013-1"></script>
+</body>
+</html>

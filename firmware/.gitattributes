@@ -1,0 +1,2 @@
+# Прошивка собирается в WSL: bash и тулчейн ждут LF
+* text=auto eol=lf
