@@ -98,7 +98,9 @@ def test_due_only_when_quote_names_time():
         CHUNK,
         DAY,
     )
-    assert [t.due for t in tasks] == ["2026-10-16", None, None]
+    # «в пятницу» с выдуманным моделью 2023-12-29: с 30.10.2026 срок считается по
+    # словам цитаты от даты записи, ответ модели в таком случае не нужен.
+    assert [t.due for t in tasks] == ["2026-10-16", None, "2026-10-16"]
 
 
 def test_leisure_gives_no_tasks_or_facts():

@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import calendar
 import difflib
 import json
 import logging
@@ -157,7 +158,55 @@ def grounding(quote: str, source: str) -> float:
     return best
 
 
+# Срок по словам цитаты считаем сами, а не моделью: 30.10.2026 в боевой базе
+# «позвонить в понедельник», сказанное в пятницу 23.10, получило срок 25.10
+# (воскресенье), «в феврале» — 01.02. Модель видит дату и день недели в промпте,
+# но арифметику календаря путает. Списки — из каталогов всех языков.
+_DUE_RELATIVE = [
+    (re.compile(pattern, re.IGNORECASE), int(days))
+    for table in i18n.data_all("nlu.due_relative")
+    for pattern, days in table
+]
+_DUE_WEEKDAYS = [
+    re.compile("|".join(names), re.IGNORECASE)
+    for names in zip(*i18n.data_all("nlu.due_weekdays"))
+]
+_DUE_MONTHS = [
+    re.compile("|".join(names), re.IGNORECASE)
+    for names in zip(*i18n.data_all("nlu.due_months"))
+]
+_HAS_NUMBER = re.compile(r"\d")
+
+
+def resolve_due(quote: str, day: date | None) -> date | None:
+    """Срок по словам цитаты от даты записи; ``None``, если слов нет или они спорят.
+
+    «завтра» — следующий день; день недели — ближайший после ``day`` (сказанный
+    в тот же день недели — через неделю); месяц без числа — последний день
+    ближайшего такого месяца. С числом («до 15 марта») решает модель: дату она
+    переписывает, а не вычисляет.
+    """
+    if day is None or not quote:
+        return None
+    found: set[date] = set()
+    for pattern, days in _DUE_RELATIVE:
+        if pattern.search(quote):
+            found.add(day + timedelta(days=days))
+    for index, pattern in enumerate(_DUE_WEEKDAYS):
+        if pattern.search(quote):
+            found.add(day + timedelta(days=(index - day.weekday()) % 7 or 7))
+    if not _HAS_NUMBER.search(quote):
+        for month, pattern in enumerate(_DUE_MONTHS, start=1):
+            if pattern.search(quote):
+                year = day.year if month >= day.month else day.year + 1
+                found.add(date(year, month, calendar.monthrange(year, month)[1]))
+    return found.pop() if len(found) == 1 else None
+
+
 def _due(raw: Any, quote: str, day: date | None) -> str | None:
+    fixed = resolve_due(quote, day)
+    if fixed is not None:
+        return fixed.isoformat()
     due = _clean(raw)
     if not due or not _ISO_DATE.match(due) or not _DUE_CUE.search(quote or ""):
         return None
@@ -393,6 +442,7 @@ class NluProcessor:
         *,
         max_chars: int = MAX_TRANSCRIPT_CHARS,
         user_role: str | None = None,
+        user_vocab: str | None = None,
         lang: str | None = None,
     ) -> None:
         self.router = router
@@ -400,6 +450,7 @@ class NluProcessor:
         # Язык промптов и вывода; по умолчанию — язык интерфейса.
         self.lang = i18n.resolve(lang) if lang else i18n.get_language()
         self.user_role = (user_role or "").strip() or t("nlu.default_role", lang=self.lang)
+        self.user_vocab = (user_vocab or "").strip()
 
     def analyse(
         self, transcript: str, *, allow_cloud: bool = False, day: date | None = None
@@ -525,6 +576,11 @@ class NluProcessor:
             if day
             else t("nlu.weekday_unknown", lang=self.lang),
         )
+        # Словарь владельца — здесь, а не в whisper: hotwords в faster-whisper на
+        # боевых записях 30.10.2026 заменили живую реплику списком слов. Модель
+        # разбора видит расшифровку целиком и стереть речь не может.
+        if self.user_vocab:
+            system += "\n" + t("nlu.prompt.vocab", lang=self.lang, vocab=self.user_vocab)
         messages = [
             {"role": "system", "content": system},
             {"role": "user", "content": chunk},

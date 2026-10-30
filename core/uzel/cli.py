@@ -629,7 +629,8 @@ _INGEST_LINES = (
 BATCH_LINES = (
     "recovered", "stitched", "transcribed", "failed", "batches", "conversations",
     "analysed", "skipped", "nlu_failed", "accepted", "rejected", "notes",
-    "raw_notes", "exported_tasks", "unloaded", "purged_audio", "purged_chunks",
+    "raw_notes", "exported_tasks", "expired_tasks", "unloaded", "purged_audio",
+    "purged_chunks",
 )
 
 

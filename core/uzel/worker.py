@@ -32,6 +32,7 @@ from .export.obsidian import (
     ConversationView,
     FactView,
     append_tasks,
+    archive_tasks,
     write_day_note,
     write_transcript_note,
 )
@@ -171,6 +172,7 @@ class BatchStats:
     notes: int = 0  # заметок дня записано
     raw_notes: int = 0  # файлов сырой расшифровки записано
     exported_tasks: int = 0
+    expired_tasks: int = 0  # открытых задач снято по сроку давности
     unloaded: int = 0  # моделей выгружено из видеопамяти между тактами
     purged_audio: int = 0  # файлов звука реплик удалено по TTL
     purged_chunks: int = 0  # обработанных фрагментов очереди удалено по TTL
@@ -921,6 +923,7 @@ class Worker:
                 self.llm_router,
                 max_chars=settings.nlu_max_chars,
                 user_role=settings.user_role,
+                user_vocab=settings.user_vocab,
             ).analyse(transcript, allow_cloud=allow_cloud, day=day)
         except NluError as exc:
             # Расшифровка остаётся: сбой модели не стоит нам транскрипта.
@@ -958,6 +961,20 @@ class Worker:
             stats.exported_tasks += self._export_tasks()
         except Exception:
             log.exception("выгрузка задач не удалась")
+
+        try:
+            stats.expired_tasks += self._expire_tasks()
+        except Exception:
+            log.exception("снятие устаревших задач не удалось")
+
+    def _expire_tasks(self, today: date | None = None) -> int:
+        """Снимает застоявшиеся задачи в базе и уносит их строки во входящих вниз."""
+        ids = self.storage.expire_tasks(
+            today or date.today(), ttl_days=self.settings.task_ttl_days
+        )
+        if ids:
+            archive_tasks(self.settings.tasks_note_path, ids)
+        return len(ids)
 
     def _export_day_note(self, day: date, *, with_transcript: bool) -> dict:
         """Заметка суток и (по флагу) сырая расшифровка. Пути или ``None``."""

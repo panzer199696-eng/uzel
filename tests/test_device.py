@@ -70,3 +70,18 @@ def test_disconnected_pendant_is_named_as_such():
     status.update(DeviceReport(uid="pendant-1", connected=False, reported_at=1000.0))
 
     assert status.as_dict(now=1000.0)["reason"] == "мост на связи, кулон отключён"
+
+
+def test_connect_changes_are_logged_once(caplog):
+    """Смена «подключён/отключён» попадает в журнал, повторный отчёт — нет."""
+    status = DeviceStatus()
+    with caplog.at_level("INFO", logger="uzel.device"):
+        status.update(DeviceReport(uid="phone-1", connected=True, battery_percent=70))
+        status.update(DeviceReport(uid="phone-1", connected=True, battery_percent=69))
+        status.update(DeviceReport(uid="phone-1", connected=False, battery_percent=65))
+
+    сообщения = [r.getMessage() for r in caplog.records if r.name == "uzel.device"]
+    assert сообщения == [
+        "кулон phone-1: подключён, заряд 70 %",
+        "кулон phone-1: отключён, заряд 65 %",
+    ]

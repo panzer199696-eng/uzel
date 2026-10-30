@@ -13,6 +13,8 @@ import time
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+from datetime import time as dtime
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -740,6 +742,34 @@ class Storage:
                 {where} ORDER BY t.id DESC LIMIT ?""",
             (*params, limit),
         ).fetchall()
+
+    def expire_tasks(self, today: date, *, ttl_days: int, overdue_days: int = 3) -> list[int]:
+        """Снимает застоявшиеся открытые задачи: статус ``expired``. Id снятых.
+
+        Закрывать задачи никто не закрывает (30.10.2026: 86 открытых, ни одной
+        закрытой, просроченные с 07.10), и список превращается в кладбище. Без
+        срока — снимается через ``ttl_days`` от начала разговора; со сроком —
+        через ``overdue_days`` после срока. ``ttl_days`` ≤ 0 — выключено.
+        """
+        if ttl_days <= 0:
+            return []
+        cutoff = datetime.combine(today - timedelta(days=ttl_days), dtime.min).timestamp()
+        overdue = (today - timedelta(days=overdue_days)).isoformat()
+        rows = self._conn.execute(
+            """SELECT t.id FROM tasks t LEFT JOIN conversations c ON c.id = t.conversation_id
+               WHERE t.status = 'open'
+                 AND ((t.due IS NOT NULL AND t.due < ?)
+                   OR (t.due IS NULL AND COALESCE(c.started_at, t.created_at) < ?))""",
+            (overdue, cutoff),
+        ).fetchall()
+        ids = [int(row["id"]) for row in rows]
+        if ids:
+            placeholders = ",".join("?" * len(ids))
+            with self._conn:
+                self._conn.execute(
+                    f"UPDATE tasks SET status='expired' WHERE id IN ({placeholders})", ids
+                )
+        return ids
 
     def mark_tasks_exported(
         self, ids: Sequence[int], *, when: float | None = None

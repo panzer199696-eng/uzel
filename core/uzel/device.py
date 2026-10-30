@@ -7,10 +7,13 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 
 from .i18n import t
+
+log = logging.getLogger(__name__)
 
 # Мост отчитывается раз в 30 с. Втрое больше — значит связь оборвалась,
 # а не «отчёт чуть задержался».
@@ -55,6 +58,16 @@ class DeviceStatus:
         self._last: DeviceReport | None = None
 
     def update(self, report: DeviceReport) -> DeviceReport:
+        # Само состояние живёт в памяти, а смену «подключён/отключён» пишем в журнал:
+        # иначе провал вроде 28.10 (мост на связи, кулон молчит сутки) задним числом
+        # не восстановить.
+        if self._last is None or self._last.connected != report.connected:
+            log.info(
+                "кулон %s: %s, заряд %s %%",
+                report.uid,
+                "подключён" if report.connected else "отключён",
+                report.battery_percent,
+            )
         self._last = report
         return report
 

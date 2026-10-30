@@ -33,6 +33,7 @@
   "export.task.due": "— due {due}",
   "export.task.source": "· {stamp}conversation {id}",
   "export.tasks.heading": "## From conversations",
+  "export.tasks.expired_heading": "## Expired — removed automatically",
   "export.raw.conversation": "## {start}–{end} · conversation {id}",
   "export.report.title": "UZEL — report for {date}",
   "export.report.tasks": "TASKS",
@@ -159,6 +160,36 @@
     "something",
     "someone"
   ],
+  "nlu.due_relative": [
+    ["\\btoday\\b", 0],
+    ["\\btonight\\b", 0],
+    ["\\btomorrow\\b", 1],
+    ["\\bnext week\\b", 7]
+  ],
+  "nlu.due_weekdays": [
+    "\\bmonday\\b",
+    "\\btuesday\\b",
+    "\\bwednesday\\b",
+    "\\bthursday\\b",
+    "\\bfriday\\b",
+    "\\bsaturday\\b",
+    "\\bsunday\\b"
+  ],
+  "nlu.due_months": [
+    "\\bjanuary\\b",
+    "\\bfebruary\\b",
+    "\\bmarch\\b",
+    "\\bapril\\b",
+    "\\b(?:in|by|until) may\\b",
+    "\\bjune\\b",
+    "\\bjuly\\b",
+    "\\baugust\\b",
+    "\\bseptember\\b",
+    "\\boctober\\b",
+    "\\bnovember\\b",
+    "\\bdecember\\b"
+  ],
+  "nlu.prompt.vocab": "Words the microphone owner often uses: {vocab}. A similar-sounding nonsense word in the transcript is most likely one of them: fix it in text, keep quote as is.",
   "nlu.due_cues": [
     "today",
     "tonight",
@@ -542,6 +573,7 @@
   "cli.batch.notes": "day notes written",
   "cli.batch.raw_notes": "transcripts written",
   "cli.batch.exported_tasks": "tasks exported",
+  "cli.batch.expired_tasks": "stale tasks expired",
   "cli.batch.unloaded": "models unloaded from VRAM",
   "cli.batch.purged_audio": "audio removed by TTL",
   "cli.batch.purged_chunks": "queue chunks removed by TTL",

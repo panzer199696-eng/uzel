@@ -406,6 +406,43 @@ def append_tasks(
     return len(fresh)
 
 
+def archive_tasks(
+    path: Path | str, ids: list[int] | set[int], *, lang: str | None = None
+) -> int:
+    """Переносит открытые строки ``- [ ] … ^uzel-N`` снятых задач в раздел устаревших.
+
+    Строки с отметкой человека (``- [x]``) не трогаются: это его решение. Строки
+    не удаляются, а уходят в конец файла под отдельный заголовок — вдруг задача
+    живая. Число перенесённых.
+    """
+    path = Path(path)
+    wanted = {int(i) for i in ids}
+    if not wanted or not path.exists():
+        return 0
+    lang = lang or i18n.get_language()
+    heading = t("export.tasks.expired_heading", lang=lang)
+    lines = path.read_text(encoding="utf-8").splitlines()
+    keep: list[str] = []
+    moved: list[str] = []
+    for line in lines:
+        anchors = {int(m) for m in ANCHOR.findall(line)}
+        if anchors & wanted and line.lstrip().startswith("- [ ]"):
+            moved.append(line)
+        else:
+            keep.append(line)
+    if not moved:
+        return 0
+    text = "\n".join(keep).rstrip("\n")
+    if heading in text:
+        head, _, tail = text.partition(heading)
+        text = f"{head}{heading}\n" + "\n".join(moved) + f"\n{tail.lstrip(chr(10))}"
+    else:
+        text = f"{text}\n\n{heading}\n\n" + "\n".join(moved)
+    path.write_text(text.rstrip("\n") + "\n", encoding="utf-8")
+    log.info("в устаревшие перенесено задач: %d", len(moved))
+    return len(moved)
+
+
 def expired_raw_notes(
     raw_dir: Path | str, *, ttl_days: int = 30, today: date | None = None
 ) -> list[Path]:
